@@ -16,7 +16,8 @@ const firebaseConfig = {
 const OWNER_EMAIL = "mohamedtahoun363@gmail.com";
 // اسم الدخول من غير @ بيتحول لإيميل داخلي
 const LOGIN_DOMAIN = "center3m.local";
-const toEmail = v => { v = (v || "").trim().toLowerCase(); return v.includes("@") ? v : v + "@" + LOGIN_DOMAIN; };
+const OWNER_LOGINS = ["admin", "mohamed", "owner"];
+const toEmail = v => { v = (v || "").trim().toLowerCase(); if (OWNER_LOGINS.includes(v)) return OWNER_EMAIL; return v.includes("@") ? v : v + "@" + LOGIN_DOMAIN; };
 const showLogin = em => (em || "").endsWith("@" + LOGIN_DOMAIN) ? em.split("@")[0] : em;
 const PERMS = [["att", "تسجيل الحضور والإمضاء والإجازات"], ["emps", "إضافة وتعديل الموظفين"], ["pay", "كشف المرتبات والأسعار والسلف والتقارير وقفل الشهر"], ["settings", "الإعدادات (البنود، الحساب، شكل التقارير، مسح الموظفين)"]];
 
@@ -124,22 +125,29 @@ function gate(html) {
 }
 function loginForm(msg = "", okMsg = false) {
   const up = mode === "up";
-  gate(`<p>${up ? "اعمل حساب جديد، وصاحب البرنامج هيوافق عليه" : "سجّل دخولك عشان تكمل"}</p>
-   <form id="gForm">${up ? '<input id="gName" placeholder="اسمك" required autocomplete="name">' : ""}
-   <input id="gEmail" type="text" placeholder="اسم الدخول أو الإيميل" required autocomplete="username" dir="ltr">
-   <input id="gPass" type="password" placeholder="الباسورد (6 حروف أو أرقام على الأقل)" required minlength="6" autocomplete="${up ? "new-password" : "current-password"}" dir="ltr">
+  gate(up ? `<p>أول مرة بس: اعمل حساب صاحب البرنامج</p>
+   <form id="gForm"><input id="gName" placeholder="اسمك" required autocomplete="name">
+   <input id="gEmail" type="text" value="${OWNER_EMAIL}" readonly dir="ltr" style="background:#F2F5F8;color:#62738A">
+   <input id="gPass" type="password" placeholder="باسورد جديد (6 على الأقل)" required minlength="6" autocomplete="new-password" dir="ltr">
    <div class="msg ${okMsg ? "ok" : ""}" id="gMsg">${msg}</div>
-   <button type="submit">${up ? "إنشاء الحساب" : "دخول"}</button>
-   <button type="button" class="link" id="gSwitch">${up ? "عندي حساب · تسجيل الدخول" : "مالكش حساب؟ اعمل حساب جديد"}</button>
-   ${up ? "" : '<button type="button" class="link" id="gForgot">نسيت الباسورد</button>'}</form>`);
+   <button type="submit">إنشاء حساب صاحب البرنامج</button>
+   <button type="button" class="link" id="gSwitch">رجوع لتسجيل الدخول</button></form>`
+  : `<p>سجّل دخولك باسم الدخول والباسورد</p>
+   <form id="gForm">
+   <input id="gEmail" type="text" placeholder="اسم الدخول" required autocomplete="username" dir="ltr" autocapitalize="none">
+   <input id="gPass" type="password" placeholder="الباسورد" required autocomplete="current-password" dir="ltr">
+   <div class="msg ${okMsg ? "ok" : ""}" id="gMsg">${msg}</div>
+   <button type="submit">دخول</button>
+   <button type="button" class="link" id="gForgot">نسيت الباسورد</button>
+   <button type="button" class="link" id="gSwitch" style="font-size:.75rem;color:#93A4B6">صاحب البرنامج وأول مرة تدخل؟</button></form>`);
 }
-const arErr = e => ({ "auth/invalid-credential": "الإيميل أو الباسورد غلط", "auth/wrong-password": "الباسورد غلط", "auth/user-not-found": "مفيش حساب بالإيميل ده", "auth/email-already-in-use": "الإيميل ده عليه حساب بالفعل، سجّل دخول", "auth/weak-password": "الباسورد لازم 6 حروف أو أرقام على الأقل", "auth/invalid-email": "الإيميل مكتوب غلط", "auth/too-many-requests": "محاولات كتير، استنى شوية وجرّب تاني", "auth/network-request-failed": "مفيش إنترنت" }[e?.code] || "حصلت مشكلة، جرّب تاني");
+const arErr = e => ({ "auth/invalid-credential": "اسم الدخول أو الباسورد غلط", "auth/wrong-password": "الباسورد غلط", "auth/user-not-found": "مفيش حساب بالاسم ده", "auth/email-already-in-use": "اسم الدخول ده مستخدم قبل كده، اختار اسم تاني", "auth/weak-password": "الباسورد لازم 6 حروف أو أرقام على الأقل", "auth/invalid-email": "اسم الدخول لازم حروف إنجليزي أو أرقام", "auth/too-many-requests": "محاولات كتير، استنى شوية وجرّب تاني", "auth/network-request-failed": "مفيش إنترنت" }[e?.code] || "حصلت مشكلة، جرّب تاني");
 document.addEventListener("submit", async e => {
   if (e.target.id !== "gForm") return; e.preventDefault();
   const email = toEmail(document.getElementById("gEmail").value), pass = document.getElementById("gPass").value, m = document.getElementById("gMsg");
   m.className = "msg"; m.textContent = "لحظة…";
   try {
-    if (mode === "up") { pendingName = document.getElementById("gName").value.trim(); const c = await createUserWithEmailAndPassword(auth, email, pass); updateProfile(c.user, { displayName: pendingName }).catch(() => {}); }
+    if (mode === "up") { pendingName = document.getElementById("gName").value.trim(); const c = await createUserWithEmailAndPassword(auth, OWNER_EMAIL, pass); updateProfile(c.user, { displayName: pendingName }).catch(() => {}); }
     else await signInWithEmailAndPassword(auth, email, pass);
   } catch (x) { m.textContent = arErr(x); }
 });
@@ -147,7 +155,7 @@ let pendingName = "";
 document.addEventListener("click", async e => {
   const t = e.target.closest("button"); if (!t) return;
   if (t.id === "gSwitch") { mode = mode === "up" ? "in" : "up"; loginForm(); }
-  else if (t.id === "gForgot") { const raw = document.getElementById("gEmail").value.trim(); if (raw && !raw.includes("@")) { document.getElementById("gMsg").textContent = "اسم الدخول ده اتعمل من صاحب البرنامج، اطلب منه يغيّر الباسورد"; return; } const em = raw; if (!em) { document.getElementById("gMsg").textContent = "اكتب إيميلك الأول"; return; } try { await sendPasswordResetEmail(auth, em); loginForm("بعتنالك إيميل تغيّر منه الباسورد", true); } catch (x) { document.getElementById("gMsg").textContent = arErr(x); } }
+  else if (t.id === "gForgot") { const v = toEmail(document.getElementById("gEmail").value); if (v === OWNER_EMAIL) { try { await sendPasswordResetEmail(auth, OWNER_EMAIL); loginForm("بعتنالك إيميل تغيّر منه الباسورد", true); } catch (x) { document.getElementById("gMsg").textContent = arErr(x); } } else { const m = document.getElementById("gMsg"); m.className = "msg"; m.textContent = "كلّم صاحب البرنامج يغيّرلك الباسورد"; } }
   else if (t.id === "gOut" || t.dataset.logout) { await signOut(auth); location.reload(); }
   else if (t.id === "fbInstall") { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; t.hidden = true; } else alert("من قايمة المتصفح اختار «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»"); }
 });
@@ -168,18 +176,18 @@ window.renderUsersPanel = () => {
      ${pwFor === u.id ? `<form class="pwform" data-pwuid="${u.id}"><input id="pwOld" type="password" placeholder="الباسورد الحالي" required dir="ltr"><input id="pwNew" type="password" placeholder="الباسورد الجديد" minlength="6" required dir="ltr"><button class="btn sm" type="submit">حفظ</button><button class="btn ghost sm" type="button" data-pwcancel="1">إلغاء</button></form>` : ""}
      <div class="row uact">
        ${u.role === "staff" ? `<button class="btn ghost sm" data-urole="disabled" data-uid="${u.id}">إيقاف الحساب</button>` : `<button class="btn sm" data-urole="staff" data-uid="${u.id}">${u.role === "pending" ? "موافقة" : "تفعيل"}</button>`}
-       ${(u.email || "").endsWith("@" + LOGIN_DOMAIN) ? `<button class="btn ghost sm" data-pw="${u.id}">تغيير الباسورد</button>` : `<button class="btn ghost sm" data-reset="${esc(u.email || "")}">إرسال تغيير باسورد للإيميل</button>`}
+       <button class="btn ghost sm" data-pw="${u.id}">تغيير الباسورد</button>
        <button class="btn ghost sm danger-txt" data-udel="${u.id}">حذف</button></div></div>`;
   return `<div class="scard"><h3>إضافة مستخدم جديد</h3>
     <form id="uForm" class="uform">
       <div class="ugrid"><div class="field"><label for="uName">الاسم</label><input id="uName" required placeholder="مثلاً: سامي"></div>
-      <div class="field"><label for="uLogin">اسم الدخول أو الإيميل</label><input id="uLogin" required dir="ltr" placeholder="sami" autocomplete="off"></div>
+      <div class="field"><label for="uLogin">اسم الدخول (إنجليزي)</label><input id="uLogin" required dir="ltr" placeholder="sami" autocomplete="off" autocapitalize="none"></div>
       <div class="field"><label for="uPass">الباسورد</label><input id="uPass" required minlength="6" dir="ltr" placeholder="6 حروف أو أرقام على الأقل" autocomplete="new-password"></div></div>
       <p class="hint" style="font-weight:600;color:var(--ink)">الصلاحيات</p>
       <div class="checks two">${permBoxes("np-", { att: true }, null)}</div>
       <div class="row" style="margin-top:10px"><button class="btn" type="submit">إنشاء الحساب</button><span class="umsg ${uiOk ? "ok" : ""}">${esc(uiMsg)}</span></div>
     </form>
-    <p class="hint">الموظف بيدخل باسم الدخول والباسورد دول. ابعتهمله، وهو يقدر يغيّر الباسورد بعد كده من القايمة.</p></div>
+    <p class="hint">الموظف بيدخل باسم الدخول والباسورد دول بس، من غير إيميل. ابعتهمله، وهو يقدر يغيّر الباسورد بعد كده من القايمة.</p></div>
    <div class="scard"><h3>المستخدمين (${rows.length})</h3>${rows.length ? `<div class="ulist">${rows.map(card).join("")}</div>` : '<p class="hint">لسه مفيش مستخدمين غيرك.</p>'}</div>`;
 };
 const flash = (m, good) => { uiMsg = m; uiOk = !!good; window.render(); setTimeout(() => { if (uiMsg === m) { uiMsg = ""; window.render(); } }, 6000); };
@@ -188,7 +196,8 @@ document.addEventListener("submit", async e => {
     e.preventDefault();
     const name = document.getElementById("uName").value.trim(), login = document.getElementById("uLogin").value.trim(), pass = document.getElementById("uPass").value;
     const perms = {}; PERMS.forEach(([k]) => perms[k] = document.getElementById("np-" + k).checked);
-    if (!/^[A-Za-z0-9._@-]+$/.test(login)) { flash("اسم الدخول لازم يكون حروف إنجليزي أو أرقام من غير مسافات"); return; }
+    if (!/^[A-Za-z0-9._-]{3,}$/.test(login)) { flash("اسم الدخول لازم 3 حروف إنجليزي أو أرقام على الأقل، من غير مسافات"); return; }
+    if (OWNER_LOGINS.includes(login.toLowerCase())) { flash("اسم الدخول ده محجوز لصاحب البرنامج، اختار اسم تاني"); return; }
     const email = toEmail(login);
     if (email === OWNER_EMAIL.toLowerCase()) { flash("ده إيميلك إنت"); return; }
     flash("بيتعمل…", true);
@@ -247,7 +256,8 @@ async function afterLogin(u) {
   let s; try { s = await getDoc(ref); } catch (x) { gate(`<p class="msg">مش قادر أوصل لقاعدة البيانات. اتأكد إن قواعد الأمان اتحطت صح.</p><button id="gOut">تسجيل الخروج</button>`); return; }
   const isOwnerEmail = (u.email || "").toLowerCase() === OWNER_EMAIL.toLowerCase();
   if (!s.exists()) {
-    await setDoc(ref, { email: u.email, name: pendingName || u.displayName || "", role: isOwnerEmail ? "owner" : "pending", createdAt: serverTimestamp() });
+    if (!isOwnerEmail) { gate(`<p>الحساب ده مش متسجل في البرنامج. كلّم صاحب البرنامج.</p><button id="gOut">رجوع</button>`); return; }
+    await setDoc(ref, { email: u.email, name: pendingName || u.displayName || "", role: "owner", createdAt: serverTimestamp() });
     s = await getDoc(ref);
   }
   myRole = s.data().role; myPerms = s.data().perms || {}; names[u.uid] = s.data().name || showLogin(u.email);
