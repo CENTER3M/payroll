@@ -237,6 +237,35 @@ document.addEventListener("click", async e => {
   else if (t.id === "myPwClose") gate(null);
 });
 
+/* ---------- import backup (owner, in settings) ---------- */
+let impMsg = "", impOk = false, impBusy = false;
+window.renderImportPanel = () => {
+  if (myRole !== "owner") return "";
+  return `<div class="scard"><h3>نقل البيانات من النسخة القديمة</h3>
+    <p class="hint">اختار ملف <b dir="ltr">payroll-backup.json</b>. هيتضاف الموظفين، والحضور والانصراف، والسلف، والأسعار والإعدادات. لو الموظف موجود قبل كده هيتحدّث، مش هيتكرر.</p>
+    <div class="row" style="margin-top:10px"><label class="btn" for="impFile" ${impBusy ? 'aria-disabled="true"' : ""}>${impBusy ? "بيتنقل…" : "اختار ملف النسخة الاحتياطية"}</label>
+    <input id="impFile" type="file" accept=".json,application/json" hidden ${impBusy ? "disabled" : ""}>
+    <span class="umsg ${impOk ? "ok" : ""}">${esc(impMsg)}</span></div>
+    <p class="hint">الإمضاءات القديمة هتظهر باسمك إنت.</p></div>`;
+};
+const fixBy = d => { if (d && d.days) for (const r of Object.values(d.days)) { if (r.by) r.by = me.uid; if (r.lby) r.lby = me.uid; } return d; };
+document.addEventListener("change", async e => {
+  if (e.target.id !== "impFile" || !e.target.files[0]) return;
+  const f = e.target.files[0];
+  impBusy = true; impOk = true; impMsg = "بيقرا الملف…"; window.render();
+  try {
+    const j = JSON.parse(await f.text()), C = j.collections || {};
+    const order = ["config", "months", "employees", "pay", "att"];
+    const all = []; for (const c of order) for (const [id, d] of Object.entries(C[c] || {})) all.push([c, id, c === "att" ? fixBy(d) : d]);
+    if (!all.length) throw new Error("الملف ده مفيهوش بيانات");
+    let n = 0;
+    for (const [c, id, d] of all) { await setDoc(doc(fs, c + "/" + id), clone(d), { merge: true }); n++; if (n % 5 === 0) { impMsg = `اتنقل ${n} من ${all.length}…`; window.render(); } }
+    const ne = Object.keys(C.employees || {}).length;
+    impMsg = `تم ✓ اتنقل ${ne} موظف وكل الحضور والسلف`; impOk = true;
+  } catch (x) { impMsg = x.code ? arErr(x) : ("الملف مش مظبوط: " + (x.message || x)); impOk = false; }
+  impBusy = false; e.target.value = ""; window.render();
+});
+
 /* ---------- install (PWA) ---------- */
 let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredPrompt = e; const b = document.getElementById("fbInstall"); if (b) b.hidden = false; });
