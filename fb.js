@@ -290,7 +290,7 @@ async function afterLogin(u) {
     s = await getDoc(ref);
   }
   myRole = s.data().role; myPerms = s.data().perms || {}; names[u.uid] = s.data().name || showLogin(u.email);
-  onSnapshot(ref, d => { const r = d.exists() ? d.data().role : "pending"; const pp = JSON.stringify(d.exists() ? d.data().perms || {} : {}); if (started && (r !== myRole || (myRole === "staff" && pp !== JSON.stringify(myPerms)))) location.reload(); });
+  onSnapshot(ref, d => { const r = d.exists() ? d.data().role : "pending"; const pk = o => JSON.stringify(Object.keys(o || {}).sort().map(k => [k, !!o[k]])); if (d.metadata && d.metadata.fromCache) return; const pp = pk(d.exists() ? d.data().perms : {}); if (started && (r !== myRole || (myRole === "staff" && pp !== pk(myPerms)))) location.reload(); });
   if (myRole !== "owner" && myRole !== "staff") {
     gate(`<p>${myRole === "disabled" ? "حسابك موقوف. كلّم صاحب البرنامج." : "حسابك اتعمل ✓<br>مستني موافقة صاحب البرنامج، وأول ما يوافق الصفحة هتفتح لوحدها."}</p><button id="gOut">تسجيل الخروج</button>`);
     onSnapshot(ref, d => { if (d.exists() && ["staff", "owner"].includes(d.data().role)) location.reload(); });

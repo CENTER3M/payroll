@@ -444,12 +444,12 @@ function write(path,patch){
 }
 async function flush(path){
   const q=queues[path];if(!q||q.busy)return;const patch=q.patch;if(!Object.keys(patch).length)return;
-  q.patch={};q.busy=true;
+  q.patch={};q.busy=true;q.fly=patch;
   try{
     const ref=S.db.doc(path);
     try{await ref.update(patch)}catch(e){if(e&&e.code==='invalid_argument'){const cur=await ref.get();if(cur.exists)throw e;await ref.set(patch)}else throw e}
   }catch(e){toast(e&&e.code==='invalid_argument'?'مش مسموح لك تعدّل هنا':'ما اتحفظش، جرّب تاني');console.warn(e)}
-  q.busy=false;if(Object.keys(q.patch).length)flush(path);
+  q.busy=false;q.fly=null;if(Object.keys(q.patch).length)flush(path);
 }
 async function remove(path){if(S.db){try{await S.db.doc(path).delete()}catch(e){toast('ما اتمسحش')}}const[c,id]=path.split('/');const m=mapFor(c,id);if(m)delete m[id];render()}
 function deepMerge(t,s){for(const k in s){if(s[k]&&typeof s[k]==='object'&&!Array.isArray(s[k])){t[k]=t[k]&&typeof t[k]==='object'?t[k]:{};deepMerge(t[k],s[k])}else t[k]=s[k]}return t}
@@ -531,6 +531,29 @@ const hueOf=id=>{let h=7;for(const c of String(id))h=(h*31+c.charCodeAt(0))%1000
 const activeEmps=()=>Object.entries(S.emps).filter(([,e])=>!e.archived&&grpOf(e)===S.group).sort((a,b)=>(a[1].name||'').localeCompare(b[1].name||'','ar'));
 
 // ---------- render ----------
+
+// ---------- update the page in place (no flashing, phone keyboard stays open) ----------
+function morph(a,b){
+  if(a.nodeType!==b.nodeType||a.nodeName!==b.nodeName){a.replaceWith(b);return}
+  if(a.nodeType===3||a.nodeType===8){if(a.nodeValue!==b.nodeValue)a.nodeValue=b.nodeValue;return}
+  if(a.nodeType!==1)return;
+  for(const at of [...a.attributes])if(!b.hasAttribute(at.name))a.removeAttribute(at.name);
+  for(const at of [...b.attributes])if(a.getAttribute(at.name)!==at.value)a.setAttribute(at.name,at.value);
+  const tag=a.nodeName;
+  if(tag==='INPUT'){if(a.type==='checkbox'||a.type==='radio'){if(a.checked!==b.checked)a.checked=b.checked}else if(a!==document.activeElement&&a.value!==b.value&&a.type!=='file')a.value=b.value;return}
+  if(tag==='TEXTAREA'){if(a!==document.activeElement&&a.value!==b.value)a.value=b.value;return}
+  const ac=[...a.childNodes],bc=[...b.childNodes];
+  for(let i=0;i<bc.length;i++){if(i<ac.length)morph(ac[i],bc[i]);else a.appendChild(bc[i])}
+  for(let i=bc.length;i<ac.length;i++)ac[i].remove();
+  if(tag==='SELECT'){const v=[...b.options].find(o=>o.selected||o.hasAttribute('selected'));if(v&&a.value!==v.value&&a!==document.activeElement)a.value=v.value}
+}
+function setView(sel,html){
+  const el=$(sel);if(!el.firstChild){el.innerHTML=html;return}
+  const t=document.createElement(el.nodeName);t.innerHTML=html;
+  const ac=[...el.childNodes],bc=[...t.childNodes];
+  for(let i=0;i<bc.length;i++){if(i<ac.length)morph(ac[i],bc[i]);else el.appendChild(bc[i])}
+  for(let i=bc.length;i<ac.length;i++)ac[i].remove();
+}
 function render(){
   $('#pName').textContent=periodName(S.key);$('#pRange').textContent=periodRange(S.key);
   {const T={att:['الحضور والانصراف','سجّل الحضور والإمضاء يوم بيوم'],pay:['كشف المرتبات','الحساب الكامل لكل الموظفين'],emp:['الموظفين','إضافة وتعديل الموظفين وأسعارهم'],set:['الإعدادات','الحساب والبنود والتقارير']}[S.tab]||['',''];$('#pageTitle').textContent=T[0];$('#pageSub').textContent=T[1]+' · '+(S.group==='day'?'موظفين بالشهر':'موظفين بالساعة')}
@@ -590,7 +613,7 @@ function renderAtt(){
     <div class="side-actions"><button class="btn" data-report="${S.sel}">📄 تقرير الموظف</button><button class="btn ghost" data-hist="${S.sel}">سجل الشهور</button></div>`;
   }
   fri+=`</div>`;
-  $('#view-att').innerHTML=`${side}<div class="grid-att2">${mid}${fri}</div>`;
+  setView('#view-att',`${side}<div class="grid-att2">${mid}${fri}</div>`);
 }
 function monthBanner(){
   const ended=ymd(periodDays(S.key).slice(-1)[0])<todayStr;
@@ -622,7 +645,7 @@ function loanBox(id){
 }
 function renderPay(){
   const list=activeEmps();
-  if(!list.length){$('#view-pay').innerHTML=`<div class="empty"><b>مفيش موظفين ${S.group==='day'?'بالشهر':'بالساعة'}</b>ضيفهم من تبويب «الموظفين».</div>`;return}
+  if(!list.length){setView('#view-pay',`<div class="empty"><b>مفيش موظفين ${S.group==='day'?'بالشهر':'بالساعة'}</b>ضيفهم من تبويب «الموظفين».</div>`);return}
   const its=items();
   if(S.group==='day')return renderPayDay(list,its);
   let tot={h:0,basic:0,friPay:0,leavePay:0,net:0};const itTot={},LT={add:0,ded:0,left:0};
@@ -643,11 +666,11 @@ function renderPay(){
     <td class="num net ${p.net<0?'neg':''}">${money(p.net)}</td>
     <td><input class="n wide" type="text" id="note-${id}" data-pay="${id}" data-f="note" value="${esc(v('note'))}" placeholder="ملاحظة" style="width:170px"></td>
     <td><button class="btn sm" data-report="${id}">تقرير</button></td></tr>`}).join('');
-  $('#view-pay').innerHTML=`${monthBanner()}<div class="sheet-head"><div><h2>كشف المرتبات</h2><div class="sub">${periodRange(S.key)} · الجمعة الافتراضية = ${fmtH(fridayHours())} · ${fridays(S.key).length} جمعة · ${leaveDays()} أيام إجازة في الشهر</div></div>
+  setView('#view-pay',`${monthBanner()}<div class="sheet-head"><div><h2>كشف المرتبات</h2><div class="sub">${periodRange(S.key)} · الجمعة الافتراضية = ${fmtH(fridayHours())} · ${fridays(S.key).length} جمعة · ${leaveDays()} أيام إجازة في الشهر</div></div>
   <div class="field" style="margin:0"><label for="fh2">ساعات الجمعة الافتراضية</label><input id="fh2" type="number" min="0" step="0.5" value="${snapOn()?S.monthCfg.snap.fridayHours:(S.monthCfg.fridayHours ?? S.general.fridayHours ?? '')}" style="width:120px" ${isClosed()?'disabled':''}></div></div>
   <div class="scroll"><table><thead><tr><th>الموظف</th><th>الساعات</th><th>سعر الساعة</th><th>الأساسي</th><th>عدد الجُمع</th><th>ساعات الجمعة</th><th>قيمة الجُمع</th><th>غياب</th><th>إجازات تضاف</th>${its.map(it=>`<th>${esc(it.name)} <span style="font-weight:400">(${it.kind==='ded'?'−':'+'}${it.unit==='hours'?' ساعات':''})</span></th>`).join('')}<th class="loanh">سلفة قديمة</th><th class="loanh">سلفة جديدة</th><th class="loanh">خصم من السلفة</th><th class="loanh">باقي السلفة</th><th>الصافي</th><th>ملاحظة</th><th></th></tr></thead>
   <tbody>${rows}</tbody><tfoot><tr><td>الإجمالي</td><td>${fmtH(tot.h)}</td><td></td><td>${money(tot.basic)}</td><td></td><td></td><td>${money(tot.friPay)}</td><td></td><td>${money(tot.leavePay)}</td>${its.map(it=>`<td>${money(itTot[it.id]||0)}</td>`).join('')}<td></td><td>${money(LT.add)}</td><td>${money(LT.ded)}</td><td>${money(LT.left)}</td><td class="net">${money(tot.net)}</td><td colspan="2"></td></tr></tfoot></table></div>
-  <p class="sub" style="color:var(--muted);font-size:.85rem">الصافي = الأساسي + قيمة الجُمع + الإجازات اللي ما اتاخدتش + بنود الإضافة − بنود الخصم. اليوم اللي مش ممضي (غير الجمعة) بيتحسب غياب. البنود بتضيفها أو تشيلها من «الإعدادات».</p>`;
+  <p class="sub" style="color:var(--muted);font-size:.85rem">الصافي = الأساسي + قيمة الجُمع + الإجازات اللي ما اتاخدتش + بنود الإضافة − بنود الخصم. اليوم اللي مش ممضي (غير الجمعة) بيتحسب غياب. البنود بتضيفها أو تشيلها من «الإعدادات».</p>`);
 }
 function renderPayDay(list,its){
   let tot={worked:0,basic:0,net:0};const itTot={},LT={add:0,ded:0,left:0};
@@ -663,10 +686,10 @@ function renderPayDay(list,its){
     <td class="num net ${p.net<0?'neg':''}">${money(p.net)}</td>
     <td><input class="n wide" type="text" id="note-${id}" data-pay="${id}" data-f="note" value="${esc(v('note'))}" placeholder="ملاحظة" style="width:170px"></td>
     <td><button class="btn sm" data-report="${id}">تقرير</button></td></tr>`}).join('');
-  $('#view-pay').innerHTML=`${monthBanner()}<div class="sheet-head"><div><h2>كشف مرتبات الموظفين بالشهر</h2><div class="sub">${periodRange(S.key)} · المرتب = أيام الشغل × سعر اليوم</div></div></div>
+  setView('#view-pay',`${monthBanner()}<div class="sheet-head"><div><h2>كشف مرتبات الموظفين بالشهر</h2><div class="sub">${periodRange(S.key)} · المرتب = أيام الشغل × سعر اليوم</div></div></div>
   <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>سعر اليوم</th><th>الأساسي</th><th>غياب</th>${its.map(it=>`<th>${esc(it.name)} <span style="font-weight:400">(${it.kind==='ded'?'−':'+'}${it.unit==='hours'?' أيام':''})</span></th>`).join('')}<th class="loanh">سلفة قديمة</th><th class="loanh">سلفة جديدة</th><th class="loanh">خصم من السلفة</th><th class="loanh">باقي السلفة</th><th>الصافي</th><th>ملاحظة</th><th></th></tr></thead>
   <tbody>${rows}</tbody><tfoot><tr><td>الإجمالي</td><td>${tot.worked}</td><td></td><td>${money(tot.basic)}</td><td></td>${its.map(it=>`<td>${money(itTot[it.id]||0)}</td>`).join('')}<td></td><td>${money(LT.add)}</td><td>${money(LT.ded)}</td><td>${money(LT.left)}</td><td class="net">${money(tot.net)}</td><td colspan="2"></td></tr></tfoot></table></div>
-  <p class="sub" style="color:var(--muted);font-size:.85rem">أيام الشغل = الأيام الممضية. الصافي = أيام الشغل × سعر اليوم + بنود الإضافة − بنود الخصم. البنود اللي بالساعات بتتحسب هنا بالأيام × سعر اليوم.</p>`;
+  <p class="sub" style="color:var(--muted);font-size:.85rem">أيام الشغل = الأيام الممضية. الصافي = أيام الشغل × سعر اليوم + بنود الإضافة − بنود الخصم. البنود اللي بالساعات بتتحسب هنا بالأيام × سعر اليوم.</p>`);
 }
 function renderEmp(){
   const all=Object.entries(S.emps).filter(([,e])=>grpOf(e)===S.group).sort((a,b)=>(!!a[1].archived-!!b[1].archived)||(a[1].name||'').localeCompare(b[1].name||'','ar'));
@@ -679,7 +702,7 @@ function renderEmp(){
     <td><select id="et-${id}" data-emp-f="type" data-id="${id}" ${S.canEmps?'':'disabled'} style="border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px"><option value="hour" ${grpOf(e)==='hour'?'selected':''}>بالساعة</option><option value="day" ${grpOf(e)==='day'?'selected':''}>بالشهر (باليوم)</option></select></td>
     <td>${e.archived?'<span style="color:var(--muted)">موقوف</span>':'<span style="color:var(--ok)">شغال</span>'}</td>
     <td class="row" style="flex-wrap:nowrap">${S.isAdmin?`<button class="btn sm" data-hist="${id}">سجل الشهور</button>`:''}${S.canEmps?`<button class="btn ghost sm" data-arch="${id}">${e.archived?'رجّعه':'إيقاف'}</button>`:''}</td></tr>`).join('')+`</tbody></table></div>`;
-  $('#view-emp').innerHTML=h;
+  setView('#view-emp',h);
 }
 
 function ownerPanel(){
@@ -782,9 +805,9 @@ function renderSet(){
     ${activeEmps().length?`<div class="row" style="margin-top:12px"><button class="btn" data-report="${activeEmps()[0][0]}">معاينة التقرير</button></div>`:''}</div>`;
   else if(S.setSec==='owner')body=ownerPanel();
   else if(S.setSec==='danger')body=deletePanel();
-  $('#view-set').innerHTML=`<div class="set-layout">
+  setView('#view-set',`<div class="set-layout">
    <nav class="set-nav">${secs.map(([k,t])=>`<button class="set-link" data-sec="${k}" aria-current="${k===S.setSec}">${SET_ICONS[k]}<span>${t}</span></button>`).join('')}</nav>
-   <div class="set-main"><header class="set-head"><h2>${cur[1]}</h2><p>${cur[2]}</p></header><div class="set-body">${body}</div></div></div>`;
+   <div class="set-main"><header class="set-head"><h2>${cur[1]}</h2><p>${cur[2]}</p></header><div class="set-body">${body}</div></div></div>`);
 }
 
 // ---------- report ----------
@@ -1091,13 +1114,20 @@ async function resolveNames(){
 function subMonth(){
   unsubMonth.forEach(u=>u());unsubMonth=[];if(!S.db){S.monthCfg={};S.monthState={};return}
   S.att={};S.pay={};S.monthCfg={};S.monthState={};const key=S.key;
-  unsubMonth.push(S.db.doc('months/'+key).onSnapshot(s=>{if(key!==S.key)return;S.monthState=s.exists?JSON.parse(JSON.stringify(s.data())):{};render()},err));
-  unsubMonth.push(S.db.collection('att').where('month','==',key).onSnapshot(s=>{if(key!==S.key)return;const m={};s.docs.forEach(d=>m[d.id]=JSON.parse(JSON.stringify(d.data())));S.att=m;render();resolveNames()},err));
+  unsubMonth.push(S.db.doc('months/'+key).onSnapshot(s=>{if(key!==S.key)return;const v=snapDoc('months/'+key,s);if(same(v,S.monthState))return;S.monthState=v;softRender()},err));
+  unsubMonth.push(S.db.collection('att').where('month','==',key).onSnapshot(s=>{if(key!==S.key)return;const m=snapMap('att',s);if(same(m,S.att))return;S.att=m;softRender();resolveNames()},err));
   if(S.isAdmin){
-    unsubMonth.push(S.db.collection('pay').where('month','==',key).onSnapshot(s=>{if(key!==S.key)return;const m={};s.docs.forEach(d=>m[d.id]=JSON.parse(JSON.stringify(d.data())));S.pay=m;render()},err));
-    unsubMonth.push(S.db.doc('config/m_'+key).onSnapshot(s=>{if(key!==S.key)return;S.monthCfg=s.exists?JSON.parse(JSON.stringify(s.data())):{};render()},err));
+    unsubMonth.push(S.db.collection('pay').where('month','==',key).onSnapshot(s=>{if(key!==S.key)return;const m=snapMap('pay',s);if(same(m,S.pay))return;S.pay=m;softRender()},err));
+    unsubMonth.push(S.db.doc('config/m_'+key).onSnapshot(s=>{if(key!==S.key)return;const v=snapDoc('config/m_'+key,s);if(same(v,S.monthCfg))return;S.monthCfg=v;softRender()},err));
   }
 }
+// snapshots: keep what the user is still typing, skip identical data, and draw at most once per frame
+function pend(c,id){const q=queues[c+'/'+id];if(!q)return null;const o={};if(q.fly)deepMerge(o,q.fly);deepMerge(o,q.patch);return Object.keys(o).length?o:null}
+function snapMap(c,s){const m={};s.docs.forEach(d=>{const x=JSON.parse(JSON.stringify(d.data()));const p=pend(c,d.id);m[d.id]=p?deepMerge(x,JSON.parse(JSON.stringify(p))):x});
+  for(const k in queues){const[cc,id]=k.split('/');if(cc===c&&!m[id]){const p=pend(c,id);if(p&&(c!=='att'&&c!=='pay'||p.month===S.key||(S[c]||{})[id]))m[id]=JSON.parse(JSON.stringify(p))}}return m}
+function snapDoc(path,s){const x=s.exists?JSON.parse(JSON.stringify(s.data())):{};const[c,id]=path.split('/');const p=pend(c,id);return p?deepMerge(x,JSON.parse(JSON.stringify(p))):x}
+let rq=0;const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+function softRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=0;render()})}
 function err(e){console.warn(e);if(e&&e.code==='revoked')S.canWrite=false}
 
 render();
@@ -1112,9 +1142,9 @@ render();
     else{S.isAdmin=own;S.canSettings=own;S.canWrite=w!==false;S.canEmps=S.canWrite}}
   setMode(!!db);
   if(db){
-    if(S.isAdmin)db.collection('pay').onSnapshot(s=>{const m={};s.docs.forEach(d=>m[d.id]=JSON.parse(JSON.stringify(d.data())));S.payAll=m;render()},err);
-    db.collection('employees').onSnapshot(s=>{const m={};s.docs.forEach(d=>m[d.id]=JSON.parse(JSON.stringify(d.data())));S.emps=m;render()},err);
-    if(S.isAdmin||S.canSettings)db.doc('config/general').onSnapshot(s=>{S.general=s.exists?JSON.parse(JSON.stringify(s.data())):{};render()},err);
+    if(S.isAdmin)db.collection('pay').onSnapshot(s=>{const m=snapMap('pay',s);if(same(m,S.payAll))return;S.payAll=m;softRender()},err);
+    db.collection('employees').onSnapshot(s=>{const m=snapMap('employees',s);if(same(m,S.emps))return;S.emps=m;softRender()},err);
+    if(S.isAdmin||S.canSettings)db.doc('config/general').onSnapshot(s=>{const v=snapDoc('config/general',s);if(same(v,S.general))return;S.general=v;softRender()},err);
     subMonth();
   }
   render();
