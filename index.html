@@ -514,9 +514,11 @@ function empTotals(emp){
     if(r.leave)absent++;else if(r.by)signed++;else if(d.getDay()!==5&&k<=todayStr)absent++}
   return{h,signed,worked:signed,absent};
 }
+const friLeaves=emp=>{const a=(S.att[attId(emp)]||{}).days||{};return fridays(S.key).filter(d=>(a[ymd(d)]||{}).leave).length};
+const frDefault=emp=>Math.max(0,fridays(S.key).length-friLeaves(emp));
 function payOf(emp){
   const p=S.pay[attId(emp)]||{};const t=empTotals(emp);const rate=rateOf(emp);
-  const fr=p.fridays!=null&&p.fridays!==''?num(p.fridays):fridays(S.key).length;const fh=fhOf(emp);
+  const fr=p.fridays!=null&&p.fridays!==''?num(p.fridays):frDefault(emp);const fh=fhOf(emp);
   const day=isDay(emp);const basic=day?t.worked*rate:t.h*rate,friPay=day?0:fr*fh*rate;
   const ez=esnap(emp)||{};const lv=ez.leaveDays!==undefined?num(ez.leaveDays):leaveDays(),lh=ez.leaveHours!==undefined?num(ez.leaveHours):leaveHours(),unused=day?0:Math.max(0,lv-t.absent),leavePay=unused*lh*rate;
   const vals=p.items||{};let adds=0,deds=0;
@@ -587,9 +589,9 @@ function renderAtt(){
     for(const d of periodDays(S.key)){
       const k=ymd(d),r=days[k]||{},isF=d.getDay()===5;
       if(S.group==='day'){
-        const btn=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<button class="chk on" ${W?`data-unsign="${k}"`:'disabled'} aria-pressed="true">✓ حضر</button>`:`<button class="chk" ${W?`data-sign="${k}"`:'disabled'} aria-pressed="false">حضر</button>${W&&!isF?` <button class="leavebtn" data-leave="${k}">إجازة</button>`:''}${!W&&!isF&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''}`;
+        const btn=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<button class="chk on" ${W?`data-unsign="${k}"`:'disabled'} aria-pressed="true">✓ حضر</button>`:`<button class="chk" ${W?`data-sign="${k}"`:'disabled'} aria-pressed="false">حضر</button>${W?` <button class="leavebtn" data-leave="${k}">إجازة</button>`:''}${!W&&!isF&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''}`;
         mid+=`<tr class="${isF?'fri':''}"><td><span class="day">${DAYS[d.getDay()]}</span> <span class="dt">${d.getDate()}/${d.getMonth()+1}</span>${isF?' <span class="dt">· جمعة</span>':''}</td><td>${btn}</td></tr>`;continue}
-      const sig=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<span class="signed">✓ ${esc(S.names[r.by]||'تم')} <span class="dt">${r.at?new Date(r.at).toLocaleTimeString('ar-EG',{hour:'numeric',minute:'2-digit'}):''}</span>${W?`<button data-unsign="${k}" title="إلغاء الإمضاء" aria-label="إلغاء الإمضاء">×</button>`:''}</span>`:((W?`<button class="sign" data-sign="${k}">إمضاء</button>${isF?'':` <button class="leavebtn" data-leave="${k}">إجازة</button>`}`:'')+(!W&&!isF&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''));
+      const sig=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<span class="signed">✓ ${esc(S.names[r.by]||'تم')} <span class="dt">${r.at?new Date(r.at).toLocaleTimeString('ar-EG',{hour:'numeric',minute:'2-digit'}):''}</span>${W?`<button data-unsign="${k}" title="إلغاء الإمضاء" aria-label="إلغاء الإمضاء">×</button>`:''}</span>`:((W?`<button class="sign" data-sign="${k}">إمضاء</button> <button class="leavebtn" data-leave="${k}">إجازة</button>`:'')+(!W&&!isF&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''));
       mid+=`<tr class="${isF?'fri':''}"><td><span class="day">${DAYS[d.getDay()]}</span> <span class="dt">${d.getDate()}/${d.getMonth()+1}</span>${isF?' <span class="dt">· جمعة</span>':''}</td>
       <td><input class="t" type="text" inputmode="decimal" autocomplete="off" maxlength="5" placeholder="8:00" id="in-${k}" data-d="${k}" data-f="in" value="${esc(r.in||'')}" ${dis}></td>
       <td><input class="t" type="text" inputmode="decimal" autocomplete="off" maxlength="5" placeholder="5:00" id="out-${k}" data-d="${k}" data-f="out" value="${esc(r.out||'')}" ${dis}></td>
@@ -607,7 +609,7 @@ function renderAtt(){
     fri+=`<section class="scard"><div class="sc-head"><h2>حساب ${esc(E.name)}</h2></div>
     ${dayEmp?'':`<div class="kv"><label for="fh-side">ساعات الجمعة<small>${fhOwn?'رقم خاص بيه':'بياخد الافتراضي '+fmtH(fridayHours())}</small></label>${fhInput(S.sel,'fh-side').replace('style="width:70px"','')}</div>`}
     <div class="kv"><label for="rate-side">${dayEmp?'سعر اليوم':'سعر الساعة'}<small>جنيه</small></label>${S.unlocked?`<input ${settledOf(S.sel)?'disabled':''} id="rate-side" class="n" type="number" min="0" step="0.5" value="${rateVal(S.sel)}" ${isClosed()?'disabled':''}>`:`<button class="lockcell" data-unlock="1">🔒 ••••</button>`}</div>
-    ${dayEmp?'':`<div class="sc-foot">الجُمع: ${fr.length} × ${fmtH(fhOf(S.sel))} = <b>${fmtH(fr.length*fhOf(S.sel))}</b></div>`}
+    ${dayEmp?'':`<div class="sc-foot">الجُمع: ${payOf(S.sel).fr} × ${fmtH(fhOf(S.sel))} = <b>${fmtH(payOf(S.sel).fr*fhOf(S.sel))}</b>${friLeaves(S.sel)?` <small>(${friLeaves(S.sel)} جمعة إجازة)</small>`:''}</div>`}
     </section>
     ${loanBox(S.sel)}
     <div class="side-actions"><button class="btn" data-report="${S.sel}">📄 تقرير الموظف</button><button class="btn ghost" data-hist="${S.sel}">سجل الشهور</button></div>`;
@@ -653,7 +655,7 @@ function renderPay(){
     return`<tr ${settledOf(id)?'data-settled="1" class="settled-row"':''}><td><b>${esc(e.name)}</b>${settledOf(id)?'<span class="tag ok" style="margin-inline-start:6px">✓ اتقفل</span>':''}</td><td class="num">${fmtH(p.h)}</td>
     <td>${rateCell(id,"r-"+id,0.5)}</td>
     <td class="num">${money(p.basic)}</td>
-    <td><input class="n" type="number" min="0" step="1" id="fr-${id}" data-pay="${id}" data-f="fridays" value="${v('fridays')}" placeholder="${fridays(S.key).length}" style="width:60px"></td>
+    <td><input class="n" type="number" min="0" step="1" id="fr-${id}" data-pay="${id}" data-f="fridays" value="${v('fridays')}" placeholder="${frDefault(id)}" style="width:60px"></td>
     <td>${fhInput(id,"fhr-"+id)}</td>
     <td class="num">${money(p.friPay)}</td>
     <td class="num" style="color:var(--warn)">${p.absent}</td>
