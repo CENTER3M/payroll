@@ -1,6 +1,6 @@
 // Firebase backend for the payroll app: login, roles, Firestore adapter, downloads, install
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, doc, collection, query, where, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 window.__fbLoaded = true;
@@ -14,9 +14,16 @@ const firebaseConfig = {
 };
 // صاحب البرنامج: لازم يكون نفس الإيميل المكتوب في قواعد الأمان (firestore.rules)
 const OWNER_EMAIL = "mohamedtahoun363@gmail.com";
+// اسم الدخول من غير @ بيتحول لإيميل داخلي
+const LOGIN_DOMAIN = "center3m.local";
+const toEmail = v => { v = (v || "").trim().toLowerCase(); return v.includes("@") ? v : v + "@" + LOGIN_DOMAIN; };
+const showLogin = em => (em || "").endsWith("@" + LOGIN_DOMAIN) ? em.split("@")[0] : em;
+const PERMS = [["att", "تسجيل الحضور والإمضاء والإجازات"], ["emps", "إضافة وتعديل الموظفين"], ["pay", "كشف المرتبات والأسعار والسلف والتقارير وقفل الشهر"], ["settings", "الإعدادات (البنود، الحساب، شكل التقارير، مسح الموظفين)"]];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const secApp = initializeApp(firebaseConfig, "secondary");
+const secAuth = getAuth(secApp);
 const fs = initializeFirestore(app, { ignoreUndefinedProperties: true });
 const clone = o => JSON.parse(JSON.stringify(o ?? {}));
 const err = e => ({ code: e && e.code === "permission-denied" ? "invalid_argument" : "unavailable", message: e?.message || String(e) });
@@ -57,13 +64,14 @@ const downloads = {
 };
 
 /* ---------- people ---------- */
-let me = null, myRole = "pending";
+let me = null, myRole = "pending", myPerms = {};
 const names = {};
 const user = {
   id: async () => me?.uid ?? null,
   isOwner: async () => myRole === "owner",
   canEdit: async () => myRole === "owner",
   can: async () => myRole === "owner" || myRole === "staff",
+  perms: async () => (myRole === "owner" ? { att: true, emps: true, pay: true, settings: true } : { ...myPerms }),
   me: async () => ({ id: me?.uid ?? null, name: names[me?.uid] || "", isOwner: myRole === "owner" }),
   profiles: async ids => {
     const out = {};
@@ -91,6 +99,20 @@ const css = `
 #gate .ok{color:#0E8A5C}
 .fb-out{border:1px solid rgba(255,255,255,.15);background:transparent;color:var(--side-ink);border-radius:10px;padding:8px 12px;cursor:pointer;text-align:right}
 .fb-install{border:0;border-radius:10px;padding:9px 12px;cursor:pointer;font-weight:700;background:linear-gradient(118deg,#27C6EE,#2FD8BC);color:#06263A;text-align:right}
+#gate form#myPwForm{margin-top:6px}
+.ugrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.ugrid .field{margin:0}
+.umsg{font-size:.88rem;color:var(--bad)}.umsg.ok{color:var(--ok)}
+.ulist{display:flex;flex-direction:column;gap:12px}
+.ucard{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--surface)}
+.ucard.pending{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 6%,var(--surface))}
+.ucard.disabled{opacity:.7}
+.uhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.uhead .av{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:#fff;font-weight:700;background:linear-gradient(135deg,hsl(var(--h) 62% 50%),hsl(calc(var(--h) + 35) 58% 42%))}
+.uinfo{flex:1;min-width:0;display:flex;flex-direction:column}.uinfo small{color:var(--muted);text-align:right}
+.uact{margin-top:10px;gap:6px}
+.pwform{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.pwform input{border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:var(--surface);color:var(--ink)}
+.danger-txt{color:var(--bad)!important}
 `;
 document.head.insertAdjacentHTML("beforeend", `<style>${css}</style>`);
 let mode = "in";
@@ -104,7 +126,7 @@ function loginForm(msg = "", okMsg = false) {
   const up = mode === "up";
   gate(`<p>${up ? "اعمل حساب جديد، وصاحب البرنامج هيوافق عليه" : "سجّل دخولك عشان تكمل"}</p>
    <form id="gForm">${up ? '<input id="gName" placeholder="اسمك" required autocomplete="name">' : ""}
-   <input id="gEmail" type="email" placeholder="الإيميل" required autocomplete="email" dir="ltr">
+   <input id="gEmail" type="text" placeholder="اسم الدخول أو الإيميل" required autocomplete="username" dir="ltr">
    <input id="gPass" type="password" placeholder="الباسورد (6 حروف أو أرقام على الأقل)" required minlength="6" autocomplete="${up ? "new-password" : "current-password"}" dir="ltr">
    <div class="msg ${okMsg ? "ok" : ""}" id="gMsg">${msg}</div>
    <button type="submit">${up ? "إنشاء الحساب" : "دخول"}</button>
@@ -114,7 +136,7 @@ function loginForm(msg = "", okMsg = false) {
 const arErr = e => ({ "auth/invalid-credential": "الإيميل أو الباسورد غلط", "auth/wrong-password": "الباسورد غلط", "auth/user-not-found": "مفيش حساب بالإيميل ده", "auth/email-already-in-use": "الإيميل ده عليه حساب بالفعل، سجّل دخول", "auth/weak-password": "الباسورد لازم 6 حروف أو أرقام على الأقل", "auth/invalid-email": "الإيميل مكتوب غلط", "auth/too-many-requests": "محاولات كتير، استنى شوية وجرّب تاني", "auth/network-request-failed": "مفيش إنترنت" }[e?.code] || "حصلت مشكلة، جرّب تاني");
 document.addEventListener("submit", async e => {
   if (e.target.id !== "gForm") return; e.preventDefault();
-  const email = document.getElementById("gEmail").value.trim(), pass = document.getElementById("gPass").value, m = document.getElementById("gMsg");
+  const email = toEmail(document.getElementById("gEmail").value), pass = document.getElementById("gPass").value, m = document.getElementById("gMsg");
   m.className = "msg"; m.textContent = "لحظة…";
   try {
     if (mode === "up") { pendingName = document.getElementById("gName").value.trim(); const c = await createUserWithEmailAndPassword(auth, email, pass); updateProfile(c.user, { displayName: pendingName }).catch(() => {}); }
@@ -125,25 +147,86 @@ let pendingName = "";
 document.addEventListener("click", async e => {
   const t = e.target.closest("button"); if (!t) return;
   if (t.id === "gSwitch") { mode = mode === "up" ? "in" : "up"; loginForm(); }
-  else if (t.id === "gForgot") { const em = document.getElementById("gEmail").value.trim(); if (!em) { document.getElementById("gMsg").textContent = "اكتب إيميلك الأول"; return; } try { await sendPasswordResetEmail(auth, em); loginForm("بعتنالك إيميل تغيّر منه الباسورد", true); } catch (x) { document.getElementById("gMsg").textContent = arErr(x); } }
+  else if (t.id === "gForgot") { const raw = document.getElementById("gEmail").value.trim(); if (raw && !raw.includes("@")) { document.getElementById("gMsg").textContent = "اسم الدخول ده اتعمل من صاحب البرنامج، اطلب منه يغيّر الباسورد"; return; } const em = raw; if (!em) { document.getElementById("gMsg").textContent = "اكتب إيميلك الأول"; return; } try { await sendPasswordResetEmail(auth, em); loginForm("بعتنالك إيميل تغيّر منه الباسورد", true); } catch (x) { document.getElementById("gMsg").textContent = arErr(x); } }
   else if (t.id === "gOut" || t.dataset.logout) { await signOut(auth); location.reload(); }
   else if (t.id === "fbInstall") { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; t.hidden = true; } else alert("من قايمة المتصفح اختار «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»"); }
-  else if (t.dataset.urole) { await setDoc(doc(fs, "users/" + t.dataset.uid), { role: t.dataset.urole }, { merge: true }); }
-  else if (t.dataset.udel) { if (t.dataset.armed) { await deleteDoc(doc(fs, "users/" + t.dataset.udel)); } else { t.dataset.armed = "1"; t.textContent = "اضغط تاني للتأكيد"; setTimeout(() => { if (t.isConnected) { delete t.dataset.armed; t.textContent = "حذف"; } }, 5000); } }
 });
 
-/* ---------- users panel for the owner (shown in settings) ---------- */
-let usersList = [];
+/* ---------- users & permissions (owner, in settings) ---------- */
+let usersList = [], uiMsg = "", uiOk = false, pwFor = null;
+const permBoxes = (pre, perms, uid) => PERMS.map(([k, t]) => `<label><input type="checkbox" ${uid ? `data-uperm="${k}" data-uid="${uid}"` : `id="${pre}${k}"`} ${perms[k] ? "checked" : ""}> ${t}</label>`).join("");
 window.renderUsersPanel = () => {
   if (myRole !== "owner") return "";
-  const label = { owner: "صاحب البرنامج", staff: "مسؤول حضور", pending: "مستني موافقة", disabled: "موقوف" };
-  const rows = usersList.filter(u => u.role !== "owner").sort((a, b) => (a.role === "pending" ? -1 : 1) - (b.role === "pending" ? -1 : 1));
-  return `<div class="panel"><h2>المستخدمين</h2>
-   <p class="hint">أي حد يعمل حساب من صفحة الدخول بيظهر هنا «مستني موافقة». وافق عليه عشان يقدر يسجّل الحضور. مسؤول الحضور مش بيشوف المرتبات ولا الأسعار ولا السلف.</p>
-   ${rows.length ? rows.map(u => `<div class="kv"><label>${esc(u.name || u.email)}<small dir="ltr" style="text-align:right">${esc(u.email || "")}</small><small>${label[u.role] || u.role}</small></label>
-     <div class="row" style="flex-wrap:nowrap;gap:6px">${u.role === "staff" ? `<button class="btn ghost sm" data-urole="disabled" data-uid="${u.id}">إيقاف</button>` : `<button class="btn sm" data-urole="staff" data-uid="${u.id}">موافقة</button>`}<button class="btn ghost sm" data-udel="${u.id}">حذف</button></div></div>`).join("") : '<p class="hint">لسه محدش عمل حساب. ابعت لينك البرنامج لمسؤول الحضور وخليه يدوس «اعمل حساب جديد».</p>'}
-   </div>`;
+  const label = { staff: "مفعّل", pending: "مستني موافقة", disabled: "موقوف" };
+  const rows = usersList.filter(u => u.role !== "owner").sort((a, b) => (a.role === "pending" ? 0 : 1) - (b.role === "pending" ? 0 : 1) || (a.name || "").localeCompare(b.name || "", "ar"));
+  const card = u => `<div class="ucard ${u.role}">
+     <div class="uhead"><span class="av" style="--h:${hueOf(u.id)}">${esc((u.name || "?").charAt(0))}</span>
+       <div class="uinfo"><b>${esc(u.name || "بدون اسم")}</b><small dir="ltr">${esc(showLogin(u.email || ""))}</small></div>
+       <span class="tag ${u.role === "staff" ? "ok" : "warn"}">${label[u.role] || u.role}</span></div>
+     ${u.role === "pending" ? `<p class="hint">عمل الحساب بنفسه. اختار صلاحياته ووافق عليه.</p>` : ""}
+     <div class="checks two">${permBoxes("", u.perms || {}, u.id)}</div>
+     ${pwFor === u.id ? `<form class="pwform" data-pwuid="${u.id}"><input id="pwOld" type="password" placeholder="الباسورد الحالي" required dir="ltr"><input id="pwNew" type="password" placeholder="الباسورد الجديد" minlength="6" required dir="ltr"><button class="btn sm" type="submit">حفظ</button><button class="btn ghost sm" type="button" data-pwcancel="1">إلغاء</button></form>` : ""}
+     <div class="row uact">
+       ${u.role === "staff" ? `<button class="btn ghost sm" data-urole="disabled" data-uid="${u.id}">إيقاف الحساب</button>` : `<button class="btn sm" data-urole="staff" data-uid="${u.id}">${u.role === "pending" ? "موافقة" : "تفعيل"}</button>`}
+       ${(u.email || "").endsWith("@" + LOGIN_DOMAIN) ? `<button class="btn ghost sm" data-pw="${u.id}">تغيير الباسورد</button>` : `<button class="btn ghost sm" data-reset="${esc(u.email || "")}">إرسال تغيير باسورد للإيميل</button>`}
+       <button class="btn ghost sm danger-txt" data-udel="${u.id}">حذف</button></div></div>`;
+  return `<div class="scard"><h3>إضافة مستخدم جديد</h3>
+    <form id="uForm" class="uform">
+      <div class="ugrid"><div class="field"><label for="uName">الاسم</label><input id="uName" required placeholder="مثلاً: سامي"></div>
+      <div class="field"><label for="uLogin">اسم الدخول أو الإيميل</label><input id="uLogin" required dir="ltr" placeholder="sami" autocomplete="off"></div>
+      <div class="field"><label for="uPass">الباسورد</label><input id="uPass" required minlength="6" dir="ltr" placeholder="6 حروف أو أرقام على الأقل" autocomplete="new-password"></div></div>
+      <p class="hint" style="font-weight:600;color:var(--ink)">الصلاحيات</p>
+      <div class="checks two">${permBoxes("np-", { att: true }, null)}</div>
+      <div class="row" style="margin-top:10px"><button class="btn" type="submit">إنشاء الحساب</button><span class="umsg ${uiOk ? "ok" : ""}">${esc(uiMsg)}</span></div>
+    </form>
+    <p class="hint">الموظف بيدخل باسم الدخول والباسورد دول. ابعتهمله، وهو يقدر يغيّر الباسورد بعد كده من القايمة.</p></div>
+   <div class="scard"><h3>المستخدمين (${rows.length})</h3>${rows.length ? `<div class="ulist">${rows.map(card).join("")}</div>` : '<p class="hint">لسه مفيش مستخدمين غيرك.</p>'}</div>`;
 };
+const flash = (m, good) => { uiMsg = m; uiOk = !!good; window.render(); setTimeout(() => { if (uiMsg === m) { uiMsg = ""; window.render(); } }, 6000); };
+document.addEventListener("submit", async e => {
+  if (e.target.id === "uForm") {
+    e.preventDefault();
+    const name = document.getElementById("uName").value.trim(), login = document.getElementById("uLogin").value.trim(), pass = document.getElementById("uPass").value;
+    const perms = {}; PERMS.forEach(([k]) => perms[k] = document.getElementById("np-" + k).checked);
+    if (!/^[A-Za-z0-9._@-]+$/.test(login)) { flash("اسم الدخول لازم يكون حروف إنجليزي أو أرقام من غير مسافات"); return; }
+    const email = toEmail(login);
+    if (email === OWNER_EMAIL.toLowerCase()) { flash("ده إيميلك إنت"); return; }
+    flash("بيتعمل…", true);
+    try {
+      const c = await createUserWithEmailAndPassword(secAuth, email, pass);
+      await setDoc(doc(fs, "users/" + c.user.uid), { email, name, role: "staff", perms, createdAt: serverTimestamp(), createdBy: me.uid });
+      await signOut(secAuth);
+      flash("اتعمل حساب " + name + " ✓ · اسم الدخول: " + showLogin(email), true);
+    } catch (x) { await signOut(secAuth).catch(() => {}); flash(arErr(x)); }
+  } else if (e.target.classList?.contains("pwform")) {
+    e.preventDefault();
+    const uid = e.target.dataset.pwuid, u = usersList.find(x => x.id === uid);
+    try {
+      const c = await signInWithEmailAndPassword(secAuth, u.email, document.getElementById("pwOld").value);
+      await updatePassword(c.user, document.getElementById("pwNew").value); await signOut(secAuth);
+      pwFor = null; flash("اتغيّر باسورد " + (u.name || "") + " ✓", true);
+    } catch (x) { await signOut(secAuth).catch(() => {}); flash(arErr(x)); }
+  } else if (e.target.id === "myPwForm") {
+    e.preventDefault();
+    const m = document.getElementById("myPwMsg");
+    try { await signInWithEmailAndPassword(secAuth, me.email, document.getElementById("myOld").value); await signOut(secAuth); await updatePassword(auth.currentUser, document.getElementById("myNew").value); m.className = "msg ok"; m.textContent = "اتغيّر الباسورد ✓"; setTimeout(() => gate(null), 1500); }
+    catch (x) { await signOut(secAuth).catch(() => {}); m.className = "msg"; m.textContent = arErr(x); }
+  }
+});
+document.addEventListener("change", async e => {
+  const t = e.target; if (!t.dataset || !t.dataset.uperm) return;
+  try { await setDoc(doc(fs, "users/" + t.dataset.uid), { perms: { [t.dataset.uperm]: t.checked } }, { merge: true }); flash("اتحفظت الصلاحيات ✓", true); } catch (x) { flash(arErr(x)); }
+});
+document.addEventListener("click", async e => {
+  const t = e.target.closest("button"); if (!t) return;
+  if (t.dataset.urole) { await setDoc(doc(fs, "users/" + t.dataset.uid), { role: t.dataset.urole, ...(t.dataset.urole === "staff" ? {} : {}) }, { merge: true }); flash(t.dataset.urole === "staff" ? "الحساب اتفعّل ✓" : "الحساب اتوقف", t.dataset.urole === "staff"); }
+  else if (t.dataset.udel) { if (t.dataset.armed) { await deleteDoc(doc(fs, "users/" + t.dataset.udel)); flash("اتحذف المستخدم", true); } else { t.dataset.armed = "1"; t.textContent = "اضغط تاني للتأكيد"; setTimeout(() => { if (t.isConnected) { delete t.dataset.armed; t.textContent = "حذف"; } }, 5000); } }
+  else if (t.dataset.pw) { pwFor = t.dataset.pw; window.render(); }
+  else if (t.dataset.pwcancel) { pwFor = null; window.render(); }
+  else if (t.dataset.reset) { try { await sendPasswordResetEmail(auth, t.dataset.reset); flash("اتبعت إيميل تغيير الباسورد ✓", true); } catch (x) { flash(arErr(x)); } }
+  else if (t.id === "myPw") { gate(`<p>تغيير الباسورد بتاعك</p><form id="myPwForm"><input id="myOld" type="password" placeholder="الباسورد الحالي" required dir="ltr"><input id="myNew" type="password" placeholder="الباسورد الجديد (6 على الأقل)" minlength="6" required dir="ltr"><div class="msg" id="myPwMsg"></div><button type="submit">حفظ</button><button type="button" class="link" id="myPwClose">رجوع</button></form>`); }
+  else if (t.id === "myPwClose") gate(null);
+});
 
 /* ---------- install (PWA) ---------- */
 let deferredPrompt = null;
@@ -153,7 +236,7 @@ function sideButtons() {
   const f = document.querySelector(".side-foot"); if (!f || document.getElementById("gOut")) return;
   const standalone = matchMedia("(display-mode: standalone)").matches;
   f.insertAdjacentHTML("afterbegin", `<button class="fb-install" id="fbInstall" ${deferredPrompt && !standalone ? "" : "hidden"}>⬇ تثبيت البرنامج على الجهاز</button>`);
-  f.insertAdjacentHTML("beforeend", `<button class="fb-out" id="gOut">تسجيل الخروج · ${esc(names[me?.uid] || me?.email || "")}</button>`);
+  f.insertAdjacentHTML("beforeend", `<button class="fb-out" id="myPw">تغيير الباسورد</button><button class="fb-out" id="gOut">تسجيل الخروج · ${esc(names[me?.uid] || showLogin(me?.email || ""))}</button>`);
 }
 
 /* ---------- auth flow ---------- */
@@ -167,14 +250,14 @@ async function afterLogin(u) {
     await setDoc(ref, { email: u.email, name: pendingName || u.displayName || "", role: isOwnerEmail ? "owner" : "pending", createdAt: serverTimestamp() });
     s = await getDoc(ref);
   }
-  myRole = s.data().role; names[u.uid] = s.data().name || u.email;
-  onSnapshot(ref, d => { const r = d.exists() ? d.data().role : "pending"; if (started && r !== myRole) location.reload(); });
+  myRole = s.data().role; myPerms = s.data().perms || {}; names[u.uid] = s.data().name || showLogin(u.email);
+  onSnapshot(ref, d => { const r = d.exists() ? d.data().role : "pending"; const pp = JSON.stringify(d.exists() ? d.data().perms || {} : {}); if (started && (r !== myRole || (myRole === "staff" && pp !== JSON.stringify(myPerms)))) location.reload(); });
   if (myRole !== "owner" && myRole !== "staff") {
     gate(`<p>${myRole === "disabled" ? "حسابك موقوف. كلّم صاحب البرنامج." : "حسابك اتعمل ✓<br>مستني موافقة صاحب البرنامج، وأول ما يوافق الصفحة هتفتح لوحدها."}</p><button id="gOut">تسجيل الخروج</button>`);
     onSnapshot(ref, d => { if (d.exists() && ["staff", "owner"].includes(d.data().role)) location.reload(); });
     return;
   }
-  if (myRole === "owner") onSnapshot(collection(fs, "users"), q => { usersList = q.docs.map(d => ({ id: d.id, ...d.data() })); q.docs.forEach(d => names[d.id] = d.data().name || d.data().email); if (typeof S !== "undefined" && S.tab === "set") window.render(); });
+  if (myRole === "owner") onSnapshot(collection(fs, "users"), q => { usersList = q.docs.map(d => ({ id: d.id, ...d.data() })); q.docs.forEach(d => names[d.id] = d.data().name || showLogin(d.data().email)); if (typeof S !== "undefined" && S.tab === "set") window.render(); });
   gate(null); started = true;
   window.__fbResolve({ db, user, downloads });
   setTimeout(sideButtons, 300);
