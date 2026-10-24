@@ -521,7 +521,7 @@ const todayStr=ymd(new Date());
 function empTotals(emp){
   const a=(S.att[attId(emp)]||{}).days||{};let h=0,signed=0,absent=0;
   for(const d of periodDays(S.key)){const k=ymd(d),r=a[k]||{};h+=num(r.h);
-    if(r.leave)absent++;else if(r.by)signed++;else if(d.getDay()!==5&&k<=todayStr)absent++}
+    if(r.leave)absent++;else if(r.by)signed++;else if((d.getDay()!==5||isDay(emp))&&k<=todayStr)absent++}
   return{h,signed,worked:signed,absent};
 }
 const friLeaves=emp=>{const a=(S.att[attId(emp)]||{}).days||{};return fridays(S.key).filter(d=>(a[ymd(d)]||{}).leave).length};
@@ -599,7 +599,7 @@ function renderAtt(){
     for(const d of periodDays(S.key)){
       const k=ymd(d),r=days[k]||{},isF=d.getDay()===5;
       if(S.group==='day'){
-        const btn=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<button class="chk on" ${W?`data-unsign="${k}"`:'disabled'} aria-pressed="true">✓ حضر</button>`:`<button class="chk" ${W?`data-sign="${k}"`:'disabled'} aria-pressed="false">حضر</button>${W?` <button class="leavebtn" data-leave="${k}">إجازة</button>`:''}${!W&&!isF&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''}`;
+        const btn=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<button class="chk on" ${W?`data-unsign="${k}"`:'disabled'} aria-pressed="true">✓ حضر</button>`:`<button class="chk" ${W?`data-sign="${k}"`:'disabled'} aria-pressed="false">حضر</button>${W?` <button class="leavebtn" data-leave="${k}">إجازة</button>`:''}${!W&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''}`;
         mid+=`<tr class="${isF?'fri':''}"><td><span class="day">${DAYS[d.getDay()]}</span> <span class="dt">${d.getDate()}/${d.getMonth()+1}</span>${isF?' <span class="dt">· جمعة</span>':''}</td><td>${btn}</td></tr>`;continue}
       const sig=r.leave?`<span class="leavechip">إجازة ${W?`<button data-unleave="${k}" title="إلغاء الإجازة" aria-label="إلغاء الإجازة">×</button>`:''}</span>`:r.by?`<span class="signed">✓ ${esc(S.names[r.by]||'تم')} <span class="dt">${r.at?new Date(r.at).toLocaleTimeString('ar-EG',{hour:'numeric',minute:'2-digit'}):''}</span>${W?`<button data-unsign="${k}" title="إلغاء الإمضاء" aria-label="إلغاء الإمضاء">×</button>`:''}</span>`:((W?`<button class="sign" data-sign="${k}">إمضاء</button> <button class="leavebtn" data-leave="${k}">إجازة</button>`:'')+(!W&&!isF&&k<=todayStr?' <span class="dt" style="color:var(--warn)">غياب</span>':''));
       mid+=`<tr class="${isF?'fri':''}"><td><span class="day">${DAYS[d.getDay()]}</span> <span class="dt">${d.getDate()}/${d.getMonth()+1}</span>${isF?' <span class="dt">· جمعة</span>':''}</td>
@@ -832,8 +832,8 @@ function reportHTML(emp){
   const cols=[R.times,R.times,R.hours,R.sign].filter(Boolean).length;
   let rows='';for(const d of periodDays(S.key)){const k=ymd(d),r=days[k]||{},isF=d.getDay()===5;
     let cells;
-    if(r.leave||(!r.by&&!isF&&k<=todayStr))cells=cols?`<td class="off" colspan="${cols}">${RL('leaveCell')}</td>`:'';
-    else if(!r.by&&isF&&!num(r.h))cells=cols?`<td colspan="${cols}">${RL('friCell')}</td>`:'';
+    if(r.leave||(!r.by&&(!isF||p.day)&&k<=todayStr))cells=cols?`<td class="off" colspan="${cols}">${RL('leaveCell')}</td>`:'';
+    else if(!r.by&&isF&&!p.day&&!num(r.h))cells=cols?`<td colspan="${cols}">${RL('friCell')}</td>`:'';
     else cells=(R.times?`<td>${esc(r.in||'')}</td><td>${esc(r.out||'')}</td>`:'')+(R.hours?`<td>${num(r.h)?fmtH(num(r.h)):''}</td>`:'')+(R.sign?`<td>${r.by?'✓':''}</td>`:'');
     rows+=`<tr class="${isF?'fri':''}"><td>${DAYS[d.getDay()]}</td><td>${d.getDate()}/${d.getMonth()+1}</td>${cells}</tr>`}
   const L=(a,b,c='')=>`<tr class="${c}"><td>${a}</td><td>${b}</td></tr>`;
@@ -1024,7 +1024,7 @@ document.addEventListener('click',e=>{
   else if(t.dataset.unleave){write('att/'+attId(S.sel),{month:S.key,emp:S.sel,days:{[t.dataset.unleave]:{leave:false}}})}
   else if(t.dataset.unsign){write('att/'+attId(S.sel),{month:S.key,emp:S.sel,days:{[t.dataset.unsign]:{by:'',at:''}}})}
   else if(t.dataset.markall){const cur=(S.att[attId(S.sel)]||{}).days||{},now=new Date().toISOString(),days={};
-    for(const d of periodDays(S.key)){const k=ymd(d);if(d.getDay()!==5&&!(cur[k]||{}).by&&!(cur[k]||{}).leave)days[k]={by:S.me||'local',at:now}}
+    for(const d of periodDays(S.key)){const k=ymd(d);if(!(cur[k]||{}).by&&!(cur[k]||{}).leave)days[k]={by:S.me||'local',at:now}}
     if(Object.keys(days).length){write('att/'+attId(S.sel),{month:S.key,emp:S.sel,days});toast('اتحدد '+Object.keys(days).length+' يوم حضور')}}
   else if(t.dataset.clearall){const cur=(S.att[attId(S.sel)]||{}).days||{},days={};for(const k in cur)if(cur[k].by)days[k]={by:'',at:''};
     if(Object.keys(days).length){write('att/'+attId(S.sel),{month:S.key,emp:S.sel,days});toast('اتمسح الحضور')}}
