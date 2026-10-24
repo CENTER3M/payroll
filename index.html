@@ -530,7 +530,7 @@ function payOf(emp){
   const p=S.pay[attId(emp)]||{};const t=empTotals(emp);const rate=rateOf(emp);
   const fr=p.fridays!=null&&p.fridays!==''?num(p.fridays):frDefault(emp);const fh=fhOf(emp);
   const day=isDay(emp);const basic=day?t.worked*rate:t.h*rate,friPay=day?0:fr*fh*rate;
-  const ez=esnap(emp)||{};const lv=ez.leaveDays!==undefined?num(ez.leaveDays):leaveDays(),lh=ez.leaveHours!==undefined?num(ez.leaveHours):leaveHours(),unused=day?0:Math.max(0,lv-t.absent),leavePay=unused*lh*rate;
+  const ez=esnap(emp)||{};const lv=ez.leaveDays!==undefined?num(ez.leaveDays):leaveDays(),lh=ez.leaveHours!==undefined?num(ez.leaveHours):leaveHours(),unused=Math.max(0,lv-t.absent),leavePay=day?unused*rate:unused*lh*rate;
   const vals=p.items||{};let adds=0,deds=0;
   const lines=items().map(it=>{const v=num(vals[it.id]);const amt=it.unit==='hours'?v*rate:v;if(it.kind==='ded')deds+=amt;else adds+=amt;return{...it,v,amt}});
   const loan=loanOf(emp);
@@ -685,11 +685,12 @@ function renderPay(){
   <p class="sub" style="color:var(--muted);font-size:.85rem">الصافي = الأساسي + قيمة الجُمع + الإجازات اللي ما اتاخدتش + بنود الإضافة − بنود الخصم. اليوم اللي مش ممضي (غير الجمعة) بيتحسب غياب. البنود بتضيفها أو تشيلها من «الإعدادات».</p>`);
 }
 function renderPayDay(list,its){
-  let tot={worked:0,basic:0,net:0};const itTot={},LT={add:0,ded:0,left:0};
+  let tot={worked:0,basic:0,leavePay:0,net:0};const itTot={},LT={add:0,ded:0,left:0};
   const rows=list.map(([id,e])=>{const p=payOf(id);for(const k in tot)tot[k]+=p[k];LT.add+=p.loan.add;LT.ded+=p.loan.ded;LT.left+=p.loan.left;p.lines.forEach(l=>itTot[l.id]=(itTot[l.id]||0)+l.amt);const v=f=>p.p[f]??'';const iv=k=>(p.p.items||{})[k]??'';
     return`<tr ${settledOf(id)?'data-settled="1" class="settled-row"':''}><td><b>${esc(e.name)}</b>${settledOf(id)?'<span class="tag ok" style="margin-inline-start:6px">✓ اتقفل</span>':''}</td><td class="num">${p.worked}</td>
     <td>${rateCell(id,"r-"+id,1)}</td>
     <td class="num">${money(p.basic)}</td><td class="num" style="color:var(--warn)">${p.absent}</td>
+    <td class="num">${p.unused} يوم = ${money(p.leavePay)}</td>
     ${its.map(it=>`<td><input class="n" type="number" step="${it.unit==='hours'?0.5:1}" id="it-${it.id}-${id}" data-pay="${id}" data-item="${it.id}" value="${iv(it.id)}" placeholder="${it.unit==='hours'?'أيام':'جنيه'}"></td>`).join('')}
     <td class="num">${p.loan.prev?money(p.loan.prev):'—'}</td>
     <td><input class="n" type="number" min="0" step="50" id="ln-${id}" data-pay="${id}" data-f="loanNew" value="${v('loanNew')}" placeholder="0"></td>
@@ -699,9 +700,9 @@ function renderPayDay(list,its){
     <td><input class="n wide" type="text" id="note-${id}" data-pay="${id}" data-f="note" value="${esc(v('note'))}" placeholder="ملاحظة" style="width:170px"></td>
     <td><button class="btn sm" data-report="${id}">تقرير</button></td></tr>`}).join('');
   setView('#view-pay',`${monthBanner()}<div class="sheet-head"><div><h2>كشف مرتبات الموظفين بالشهر</h2><div class="sub">${periodRange(S.key)} · المرتب = أيام الشغل × سعر اليوم</div></div></div>
-  <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>سعر اليوم</th><th>الأساسي</th><th>غياب</th>${its.map(it=>`<th>${esc(it.name)} <span style="font-weight:400">(${it.kind==='ded'?'−':'+'}${it.unit==='hours'?' أيام':''})</span></th>`).join('')}<th class="loanh">سلفة قديمة</th><th class="loanh">سلفة جديدة</th><th class="loanh">خصم من السلفة</th><th class="loanh">باقي السلفة</th><th>الصافي</th><th>ملاحظة</th><th></th></tr></thead>
-  <tbody>${rows}</tbody><tfoot><tr><td>الإجمالي</td><td>${tot.worked}</td><td></td><td>${money(tot.basic)}</td><td></td>${its.map(it=>`<td>${money(itTot[it.id]||0)}</td>`).join('')}<td></td><td>${money(LT.add)}</td><td>${money(LT.ded)}</td><td>${money(LT.left)}</td><td class="net">${money(tot.net)}</td><td colspan="2"></td></tr></tfoot></table></div>
-  <p class="sub" style="color:var(--muted);font-size:.85rem">أيام الشغل = الأيام الممضية. الصافي = أيام الشغل × سعر اليوم + بنود الإضافة − بنود الخصم. البنود اللي بالساعات بتتحسب هنا بالأيام × سعر اليوم.</p>`);
+  <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>سعر اليوم</th><th>الأساسي</th><th>غياب</th><th>إجازات ما اتاخدتش (+)</th>${its.map(it=>`<th>${esc(it.name)} <span style="font-weight:400">(${it.kind==='ded'?'−':'+'}${it.unit==='hours'?' أيام':''})</span></th>`).join('')}<th class="loanh">سلفة قديمة</th><th class="loanh">سلفة جديدة</th><th class="loanh">خصم من السلفة</th><th class="loanh">باقي السلفة</th><th>الصافي</th><th>ملاحظة</th><th></th></tr></thead>
+  <tbody>${rows}</tbody><tfoot><tr><td>الإجمالي</td><td>${tot.worked}</td><td></td><td>${money(tot.basic)}</td><td></td><td>${money(tot.leavePay)}</td>${its.map(it=>`<td>${money(itTot[it.id]||0)}</td>`).join('')}<td></td><td>${money(LT.add)}</td><td>${money(LT.ded)}</td><td>${money(LT.left)}</td><td class="net">${money(tot.net)}</td><td colspan="2"></td></tr></tfoot></table></div>
+  <p class="sub" style="color:var(--muted);font-size:.85rem">أيام الشغل = الأيام الممضية. الصافي = أيام الشغل × سعر اليوم + أيام الإجازة اللي ما اتاخدتش × سعر اليوم + بنود الإضافة − بنود الخصم. البنود اللي بالساعات بتتحسب هنا بالأيام × سعر اليوم.</p>`);
 }
 function renderEmp(){
   const all=Object.entries(S.emps).filter(([,e])=>grpOf(e)===S.group).sort((a,b)=>(!!a[1].archived-!!b[1].archived)||(a[1].name||'').localeCompare(b[1].name||'','ar'));
@@ -843,7 +844,7 @@ function reportHTML(emp){
   ${p.day?(R.rate&&S.unlocked?L(RL('dayRate'),money(p.rate)+' ج'):'')+L(RL('workD'),p.worked+' يوم')+L(RL('basic'),money(p.basic)+' ج','sub')
   :(R.rate&&S.unlocked?L(RL('rate'),money(p.rate)+' ج'):'')+L(RL('workH'),fmtH(p.h))+L(RL('basic'),money(p.basic)+' ج','sub')}
   ${R.fridays&&show(p.friPay)?L(RL('fri')+' ('+p.fr+' × '+fmtH(p.fh)+')',money(p.friPay)+' ج'):''}
-  ${R.leave&&show(p.leavePay)?L(RL('leave')+' ('+p.unused+' يوم × '+fmtH(p.lh)+')',money(p.leavePay)+' ج'):''}
+  ${R.leave&&show(p.leavePay)?L(RL('leave')+' ('+p.unused+' يوم'+(p.day?'':' × '+fmtH(p.lh))+')',money(p.leavePay)+' ج'):''}
   ${adds.map(l=>L(esc(l.name),lineTxt(l))).join('')}
   ${R.gross?L(RL('gross'),money(p.gross)+' ج','sub'):''}
   ${deds.map(l=>L(esc(l.name)+' '+RL('dedTag'),lineTxt(l))).join('')}
