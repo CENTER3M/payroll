@@ -129,6 +129,8 @@ tfoot td{font-weight:700;background:var(--surface-2)}
 .item-row input{flex:1 1 140px;min-width:0}
 .field textarea{width:100%;resize:vertical}
 .checks{display:flex;flex-direction:column;gap:6px}
+.rlab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.rlab{display:flex;flex-direction:column;gap:4px}.rlab small{color:var(--muted);font-size:.78rem}.rlab input{width:100%}
 .checks label{display:flex;gap:8px;align-items:center;cursor:pointer}
 .paper td.off{color:#B26A00;font-weight:600;background:#FFF6E8}
 .groups{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
@@ -501,9 +503,17 @@ function loanOf(emp){
   return{prev:Math.round(prev*100)/100,add,ded,left:Math.round((prev+add-ded)*100)/100,total:Math.round((prev+add)*100)/100}
 }
 const items=()=>Array.isArray(eff().items)?eff().items:DEFAULT_ITEMS;
-const REP_DEFAULT={info:true,table:true,times:true,hours:true,sign:true,rate:true,fridays:true,leave:true,note:true,warnings:true,sigs:true,hideZero:true};
-const REP_LABELS={info:'كروت بيانات الموظف (الاسم، الحضور، الغياب، الساعات)',table:'جدول أيام الشهر',times:'مواعيد الحضور والانصراف في الجدول',hours:'عدد الساعات في الجدول',sign:'علامة الإمضاء في الجدول',rate:'سعر الساعة في الحساب',fridays:'سطر الجُمع في الحساب',leave:'سطر الإجازات اللي ما اتاخدتش',note:'الملاحظة',warnings:'التنبيهات تحت',sigs:'خانة توقيع المسؤول',hideZero:'إخفاء أي بند قيمته صفر'};
+const REP_DEFAULT={info:true,job:true,absent:true,totalH:true,table:true,times:true,hours:true,sign:true,rate:true,fridays:true,leave:true,gross:true,loanBox:true,note:true,warnings:true,sigs:true,hideZero:true};
+const REP_LABELS={job:'الوظيفة في كروت البيانات',absent:'أيام الغياب في كروت البيانات',totalH:'إجمالي الساعات في كروت البيانات',gross:'سطر الإجمالي (قبل الخصم)',loanBox:'جدول السلفة (الإجمالي والباقي)',info:'كروت بيانات الموظف (الاسم، الحضور، الغياب، الساعات)',table:'جدول أيام الشهر',times:'مواعيد الحضور والانصراف في الجدول',hours:'عدد الساعات في الجدول',sign:'علامة الإمضاء في الجدول',rate:'سعر الساعة في الحساب',fridays:'سطر الجُمع في الحساب',leave:'سطر الإجازات اللي ما اتاخدتش',note:'الملاحظة',warnings:'التنبيهات تحت',sigs:'خانة توقيع المسؤول',hideZero:'إخفاء أي بند قيمته صفر'};
 const rep=()=>({...REP_DEFAULT,...(S.general.report||{})});
+// report wording the owner can rename
+const RLAB_GROUPS=[
+ ['بيانات الموظف',[['name','اسم الموظف'],['job','الوظيفة'],['present','أيام الحضور'],['absent','أيام الغياب'],['totalH','إجمالي الساعات']]],
+ ['جدول الأيام',[['day','اليوم'],['date','التاريخ'],['in','حضور'],['out','انصراف'],['hrs','الساعات'],['signH','إمضاء'],['leaveCell','إجازة'],['friCell','جمعة']]],
+ ['الحساب',[['rate','سعر الساعة'],['dayRate','سعر اليوم'],['workH','ساعات العمل'],['workD','أيام الشغل'],['basic','المرتب الأساسي'],['fri','الجُمع'],['leave','إجازات لم تُستخدم'],['gross','الإجمالي'],['dedTag','(خصم)'],['net','الصافي']]],
+ ['السلفة والتوقيع',[['loanDed','خصم من السلفة'],['loanTotal','إجمالي السلفة'],['loanMonth','اتخصم الشهر ده'],['loanLeft','باقي السلفة'],['note','ملاحظة'],['sig','توقيع المسؤول']]]];
+const RLAB_DEF=Object.fromEntries(RLAB_GROUPS.flatMap(g=>g[1]));
+const RL=k=>{const v=((S.general.rlabels||{})[k]??'').trim();return esc(v||RLAB_DEF[k]||k)};
 const DEFAULT_WARN='تنبيه هام: رجاء الحفاظ على إمضاء الحضور والانصراف لعدم الخصم.\nتنبيه هام: برجاء عدم مشاركة هذه الورقة مع الآخرين للحفاظ على خصوصيتك.';
 const leaveDays=()=>num(eff().leaveDays ?? 4);
 const leaveHours=()=>num(eff().leaveHours ?? 8);
@@ -797,6 +807,9 @@ function renderSet(){
       <button class="btn sm" type="submit">إضافة بند</button></form><p class="hint">السلف ليها مكانها لوحدها في صفحة الحضور وكشف المرتبات.</p></div>`;
   else if(S.setSec==='report')body=`<div class="scard"><h3>إيه اللي يظهر في التقرير</h3>
     <div class="checks two">${Object.keys(REP_DEFAULT).map(k=>`<label><input type="checkbox" id="rp-${k}" data-rep="${k}" ${r[k]?'checked':''}> ${REP_LABELS[k]}</label>`).join('')}</div></div>
+   <div class="scard"><h3>المسميات في التقرير</h3><p class="hint">اكتب الاسم اللي عاوزه يظهر بداله. لو سبت الخانة فاضية هيرجع للاسم الأصلي.</p>
+    ${RLAB_GROUPS.map(([gt,ks])=>`<p class="hint" style="font-weight:700;color:var(--ink);margin:14px 0 6px">${gt}</p><div class="rlab-grid">${ks.map(([k,d])=>`<label class="rlab"><small>${esc(d)}</small><input id="rl-${k}" data-rlab="${k}" value="${esc((g.rlabels||{})[k]||'')}" placeholder="${esc(d)}"></label>`).join('')}</div>`).join('')}
+    <div class="row" style="margin-top:14px">${activeEmps().length?`<button class="btn" data-report="${activeEmps()[0][0]}">معاينة التقرير</button>`:''}${Object.values(g.rlabels||{}).some(v=>v&&String(v).trim())?`<button class="btn ghost" data-rlabreset="1">رجوع لكل المسميات الأصلية</button>`:''}</div></div>
    <div class="scard"><h3>الإمضاء</h3>
       <div class="sigprev">${sigSrc()?`<img src="${sigSrc()}" alt="الإمضاء">`:`<span class="dt">مفيش صورة، هيتكتب الاسم بخط الرقعة</span>`}</div>
       <div class="row" style="margin-top:10px"><label class="btn ghost sm" style="cursor:pointer">تغيير صورة الإمضاء<input type="file" id="sigFile" accept="image/*" hidden></label>
@@ -804,7 +817,7 @@ function renderSet(){
       ${sigSrc()?`<button class="btn ghost sm" data-signone="1">استخدم الاسم المكتوب بدل الصورة</button>`:''}</div>
     ${sigSrc()?'':`<div class="field"><label for="s-signer">الاسم المكتوب في التوقيع</label><input id="s-signer" value="${esc(g.signer ?? 'محمد طاحون')}"></div>`}</div>
    <div class="scard"><h3>التنبيهات</h3><div class="field" style="margin:0"><label for="s-warn">كل سطر تنبيه لوحده</label><textarea id="s-warn" rows="3">${esc(g.warnings ?? DEFAULT_WARN)}</textarea></div>
-    ${activeEmps().length?`<div class="row" style="margin-top:12px"><button class="btn" data-report="${activeEmps()[0][0]}">معاينة التقرير</button></div>`:''}</div>`;
+</div>`;
   else if(S.setSec==='owner')body=ownerPanel();
   else if(S.setSec==='danger')body=deletePanel();
   setView('#view-set',`<div class="set-layout">
@@ -818,8 +831,8 @@ function reportHTML(emp){
   const cols=[R.times,R.times,R.hours,R.sign].filter(Boolean).length;
   let rows='';for(const d of periodDays(S.key)){const k=ymd(d),r=days[k]||{},isF=d.getDay()===5;
     let cells;
-    if(r.leave||(!r.by&&!isF&&k<=todayStr))cells=cols?`<td class="off" colspan="${cols}">إجازة</td>`:'';
-    else if(!r.by&&isF&&!num(r.h))cells=cols?`<td colspan="${cols}">جمعة</td>`:'';
+    if(r.leave||(!r.by&&!isF&&k<=todayStr))cells=cols?`<td class="off" colspan="${cols}">${RL('leaveCell')}</td>`:'';
+    else if(!r.by&&isF&&!num(r.h))cells=cols?`<td colspan="${cols}">${RL('friCell')}</td>`:'';
     else cells=(R.times?`<td>${esc(r.in||'')}</td><td>${esc(r.out||'')}</td>`:'')+(R.hours?`<td>${num(r.h)?fmtH(num(r.h)):''}</td>`:'')+(R.sign?`<td>${r.by?'✓':''}</td>`:'');
     rows+=`<tr class="${isF?'fri':''}"><td>${DAYS[d.getDay()]}</td><td>${d.getDate()}/${d.getMonth()+1}</td>${cells}</tr>`}
   const L=(a,b,c='')=>`<tr class="${c}"><td>${a}</td><td>${b}</td></tr>`;
@@ -827,23 +840,23 @@ function reportHTML(emp){
   const adds=p.lines.filter(l=>l.kind!=='ded'&&show(l.amt)),deds=p.lines.filter(l=>l.kind==='ded'&&show(l.amt));
   const lineTxt=l=>l.unit==='hours'?(p.day?l.v+' يوم':fmtH(l.v))+' = '+money(l.amt)+' ج':money(l.amt)+' ج';
   const sum=`<table class="sum"><tbody>
-  ${p.day?(R.rate&&S.unlocked?L('سعر اليوم',money(p.rate)+' ج'):'')+L('أيام الشغل',p.worked+' يوم')+L('المرتب الأساسي',money(p.basic)+' ج','sub')
-  :(R.rate&&S.unlocked?L('سعر الساعة',money(p.rate)+' ج'):'')+L('ساعات العمل',fmtH(p.h))+L('المرتب الأساسي',money(p.basic)+' ج','sub')}
-  ${R.fridays&&show(p.friPay)?L('الجُمع ('+p.fr+' × '+fmtH(p.fh)+')',money(p.friPay)+' ج'):''}
-  ${R.leave&&show(p.leavePay)?L('إجازات لم تُستخدم ('+p.unused+' يوم × '+fmtH(p.lh)+')',money(p.leavePay)+' ج'):''}
+  ${p.day?(R.rate&&S.unlocked?L(RL('dayRate'),money(p.rate)+' ج'):'')+L(RL('workD'),p.worked+' يوم')+L(RL('basic'),money(p.basic)+' ج','sub')
+  :(R.rate&&S.unlocked?L(RL('rate'),money(p.rate)+' ج'):'')+L(RL('workH'),fmtH(p.h))+L(RL('basic'),money(p.basic)+' ج','sub')}
+  ${R.fridays&&show(p.friPay)?L(RL('fri')+' ('+p.fr+' × '+fmtH(p.fh)+')',money(p.friPay)+' ج'):''}
+  ${R.leave&&show(p.leavePay)?L(RL('leave')+' ('+p.unused+' يوم × '+fmtH(p.lh)+')',money(p.leavePay)+' ج'):''}
   ${adds.map(l=>L(esc(l.name),lineTxt(l))).join('')}
-  ${L('الإجمالي',money(p.gross)+' ج','sub')}
-  ${deds.map(l=>L(esc(l.name)+' (خصم)',lineTxt(l))).join('')}
-  ${p.loan.ded?L('خصم من السلفة',money(p.loan.ded)+' ج'):''}
-  ${L('الصافي',money(p.net)+' ج','tot')}
-  </tbody></table>${p.loan.total||p.loan.ded?`<table class="sum" style="margin-top:8px"><tbody>${L('إجمالي السلفة',money(p.loan.total)+' ج')}${L('اتخصم الشهر ده',money(p.loan.ded)+' ج')}${L('باقي السلفة',money(p.loan.left)+' ج','sub')}</tbody></table>`:''}${R.note&&p.note?`<p style="margin-top:10px;font-size:.88rem"><b>ملاحظة:</b> ${esc(p.note)}</p>`:''}`;
-  const table=`<table><thead><tr><th>اليوم</th><th>التاريخ</th>${R.times?'<th>حضور</th><th>انصراف</th>':''}${R.hours?'<th>الساعات</th>':''}${R.sign?`<th>${p.day?'حضور':'إمضاء'}</th>`:''}</tr></thead><tbody>${rows}</tbody></table>`;
+  ${R.gross?L(RL('gross'),money(p.gross)+' ج','sub'):''}
+  ${deds.map(l=>L(esc(l.name)+' '+RL('dedTag'),lineTxt(l))).join('')}
+  ${p.loan.ded?L(RL('loanDed'),money(p.loan.ded)+' ج'):''}
+  ${L(RL('net'),money(p.net)+' ج','tot')}
+  </tbody></table>${R.loanBox&&(p.loan.total||p.loan.ded)?`<table class="sum" style="margin-top:8px"><tbody>${L(RL('loanTotal'),money(p.loan.total)+' ج')}${L(RL('loanMonth'),money(p.loan.ded)+' ج')}${L(RL('loanLeft'),money(p.loan.left)+' ج','sub')}</tbody></table>`:''}${R.note&&p.note?`<p style="margin-top:10px;font-size:.88rem"><b>${RL('note')}:</b> ${esc(p.note)}</p>`:''}`;
+  const table=`<table><thead><tr><th>${RL('day')}</th><th>${RL('date')}</th>${R.times?`<th>${RL('in')}</th><th>${RL('out')}</th>`:''}${R.hours?`<th>${RL('hrs')}</th>`:''}${R.sign?`<th>${p.day?RL('in'):RL('signH')}</th>`:''}</tr></thead><tbody>${rows}</tbody></table>`;
   const warn=(S.general.warnings ?? DEFAULT_WARN).split('\n').filter(s=>s.trim()).map(esc).join('<br>');
   return`<div class="rp-head"><img src="${LOGO}" alt=""><div style="flex:1"><h3>${esc(periodName(S.key))}</h3><div class="meta">${periodRange(S.key)}</div></div></div>
-  ${R.info?`<div class="info"><div><small>اسم الموظف</small><b>${esc(e.name)}</b></div><div><small>الوظيفة</small><b>${esc(e.job||'—')}</b></div><div><small>أيام الحضور</small><b>${p.worked}</b></div><div><small>أيام الغياب</small><b>${p.absent}</b></div>${p.day?'':`<div><small>إجمالي الساعات</small><b>${fmtH(p.h)}</b></div>`}</div>`:`<p style="margin:12px 0"><b>${esc(e.name)}</b></p>`}
-  ${R.table?`<div class="cols"><div>${table}</div><div class="side">${sum}${R.sigs?`<div class="sigs one side-sig"><div class="sig-blk">${sigSrc()?`<img class="sig-img" src="${sigSrc()}" alt="الإمضاء">`:((S.general.signer ?? 'محمد طاحون').trim()?`<span class="sig-name">${esc((S.general.signer ?? 'محمد طاحون').trim())}</span>`:'')}<span class="sig-line">توقيع المسؤول</span></div></div>`:''}${R.warnings&&warn?`<div class="warn side-warn">${warn}</div>`:''}</div></div>`:`<div style="max-width:420px;margin-top:8px">${sum}</div>`}
+  ${R.info?`<div class="info"><div><small>${RL('name')}</small><b>${esc(e.name)}</b></div>${R.job?`<div><small>${RL('job')}</small><b>${esc(e.job||'—')}</b></div>`:''}<div><small>${RL('present')}</small><b>${p.worked}</b></div>${R.absent?`<div><small>${RL('absent')}</small><b>${p.absent}</b></div>`:''}${p.day||!R.totalH?'':`<div><small>${RL('totalH')}</small><b>${fmtH(p.h)}</b></div>`}</div>`:`<p style="margin:12px 0"><b>${esc(e.name)}</b></p>`}
+  ${R.table?`<div class="cols"><div>${table}</div><div class="side">${sum}${R.sigs?`<div class="sigs one side-sig"><div class="sig-blk">${sigSrc()?`<img class="sig-img" src="${sigSrc()}" alt="الإمضاء">`:((S.general.signer ?? 'محمد طاحون').trim()?`<span class="sig-name">${esc((S.general.signer ?? 'محمد طاحون').trim())}</span>`:'')}<span class="sig-line">${RL('sig')}</span></div></div>`:''}${R.warnings&&warn?`<div class="warn side-warn">${warn}</div>`:''}</div></div>`:`<div style="max-width:420px;margin-top:8px">${sum}</div>`}
   ${R.warnings&&warn&&!R.table?`<div class="warn">${warn}</div>`:''}
-  ${R.sigs&&!R.table?`<div class="sigs one"><div class="sig-blk">${sigSrc()?`<img class="sig-img" src="${sigSrc()}" alt="الإمضاء">`:((S.general.signer ?? 'محمد طاحون').trim()?`<span class="sig-name">${esc((S.general.signer ?? 'محمد طاحون').trim())}</span>`:'')}<span class="sig-line">توقيع المسؤول</span></div></div>`:''}`;
+  ${R.sigs&&!R.table?`<div class="sigs one"><div class="sig-blk">${sigSrc()?`<img class="sig-img" src="${sigSrc()}" alt="الإمضاء">`:((S.general.signer ?? 'محمد طاحون').trim()?`<span class="sig-name">${esc((S.general.signer ?? 'محمد طاحون').trim())}</span>`:'')}<span class="sig-line">${RL('sig')}</span></div></div>`:''}`;
 }
 let dl=null,rctx=null;
 function withCtx(ctx,fn){if(!ctx)return fn();const keep={key:S.key,att:S.att,pay:S.pay,monthCfg:S.monthCfg,monthState:S.monthState};
@@ -1028,6 +1041,7 @@ document.addEventListener('click',e=>{
   else if(t.dataset.summary)openSummary();
   else if(t.dataset.sec){S.setSec=t.dataset.sec;delConfirm=null;render();window.scrollTo(0,0)}
   else if(t.dataset.sigdef)write('config/general',{sigImg:'default'});
+  else if(t.dataset.rlabreset){write('config/general',{rlabels:Object.fromEntries(Object.keys(RLAB_DEF).map(k=>[k,'']))});toast('رجعت المسميات الأصلية')}
   else if(t.dataset.signone)write('config/general',{sigImg:''});
   else if(t.dataset.batch)openBatch();
   else if(t.dataset.ball){document.querySelectorAll('.bchk').forEach(c=>c.checked=true);bCount()}
@@ -1069,6 +1083,7 @@ document.addEventListener('change',e=>{
   else if(t.id==='s-warn')write('config/general',{warnings:t.value});
   else if(t.id==='delSel'){S.delSel=t.value;delConfirm=null;render()}
   else if(t.dataset.rep)write('config/general',{report:{[t.dataset.rep]:t.checked}});
+  else if(t.dataset.rlab){write('config/general',{rlabels:{[t.dataset.rlab]:t.value.trim()}});toast('اتغيّر المسمى')}
   else if(t.dataset.own){const [a,b]=t.dataset.own.split('.');write('config/general',{owner:b?{[a]:{[b]:t.checked}}:{[a]:t.checked}})}
   else if(t.dataset.ownhide)write('config/general',{owner:{hide:{[t.dataset.ownhide]:!t.checked}}});
   else if(t.dataset.owntxt)write('config/general',{owner:{[t.dataset.owntxt]:t.value}});

@@ -224,11 +224,12 @@ document.addEventListener("submit", async e => {
 });
 document.addEventListener("change", async e => {
   const t = e.target; if (!t.dataset || !t.dataset.uperm) return;
+  const lu = usersList.find(u => u.id === t.dataset.uid); if (lu) lu.perms = { ...(lu.perms || {}), [t.dataset.uperm]: t.checked };
   try { await setDoc(doc(fs, "users/" + t.dataset.uid), { perms: { [t.dataset.uperm]: t.checked } }, { merge: true }); flash("اتحفظت الصلاحيات ✓", true); } catch (x) { flash(arErr(x)); }
 });
 document.addEventListener("click", async e => {
   const t = e.target.closest("button"); if (!t) return;
-  if (t.dataset.urole) { await setDoc(doc(fs, "users/" + t.dataset.uid), { role: t.dataset.urole, ...(t.dataset.urole === "staff" ? {} : {}) }, { merge: true }); flash(t.dataset.urole === "staff" ? "الحساب اتفعّل ✓" : "الحساب اتوقف", t.dataset.urole === "staff"); }
+  if (t.dataset.urole) { const lu = usersList.find(u => u.id === t.dataset.uid); if (lu) lu.role = t.dataset.urole; await setDoc(doc(fs, "users/" + t.dataset.uid), { role: t.dataset.urole, ...(t.dataset.urole === "staff" ? {} : {}) }, { merge: true }); flash(t.dataset.urole === "staff" ? "الحساب اتفعّل ✓" : "الحساب اتوقف", t.dataset.urole === "staff"); }
   else if (t.dataset.udel) { if (t.dataset.armed) { await deleteDoc(doc(fs, "users/" + t.dataset.udel)); flash("اتحذف المستخدم", true); } else { t.dataset.armed = "1"; t.textContent = "اضغط تاني للتأكيد"; setTimeout(() => { if (t.isConnected) { delete t.dataset.armed; t.textContent = "حذف"; } }, 5000); } }
   else if (t.dataset.pw) { pwFor = t.dataset.pw; window.render(); }
   else if (t.dataset.pwcancel) { pwFor = null; window.render(); }
