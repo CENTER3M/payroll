@@ -129,6 +129,21 @@ tfoot td{font-weight:700;background:var(--surface-2)}
 .item-row input{flex:1 1 140px;min-width:0}
 .field textarea{width:100%;resize:vertical}
 .checks{display:flex;flex-direction:column;gap:6px}
+.own-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.own-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-top:1px solid var(--line);background:var(--surface)}
+.own-row:first-child{border-top:0}
+.own-row.off{background:var(--surface-2)}.own-row.off .own-l{opacity:.55}
+.own-n{width:22px;text-align:center;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums;flex:none}
+.own-l{flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer}
+.own-l small{color:var(--muted);font-size:.75rem}
+.own-nm{width:170px;flex:none;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--surface);color:inherit;font:inherit;font-size:.88rem}
+.own-mv{display:flex;gap:4px;flex:none;width:64px;justify-content:flex-end}
+.icon-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;font-size:.7rem;display:grid;place-items:center}
+.icon-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.icon-btn:disabled{opacity:.3;cursor:default}
+.own-prev{margin-top:12px;overflow:auto;border-radius:12px;background:#E6EBF0;padding:14px;max-height:75vh}
+.own-prev .paper{zoom:.78;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+@media (max-width:700px){.own-row{flex-wrap:wrap}.own-nm{width:100%;order:3}}
 .rlab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .rlab{display:flex;flex-direction:column;gap:4px}.rlab small{color:var(--muted);font-size:.78rem}.rlab input{width:100%}
 .checks label{display:flex;gap:8px;align-items:center;cursor:pointer}
@@ -752,23 +767,87 @@ function renderEmp(){
   setView('#view-emp',h);
 }
 
+const OWN_NAMES={num:'م',name:'اسم الموظف',type:'النوع',work:'الشغل',gross:'المرتب',basic:'الأساسي',adv:'السلف',loanDed:'خصم السلفة (−)',loanLeft:'باقي السلفة',oth:'خصومات',net:'الصافي',note:'ملاحظة',total:'الإجمالي',capHour:'موظفين بالساعة',capDay:'موظفين بالشهر',cGross:'إجمالي المرتبات',cAdv:'إجمالي السلف',cOth:'خصومات تانية',cNet:'المطلوب صرفه'};
+const OWN_CARD_KEY={gross:'cGross',adv:'cAdv',oth:'cOth',net:'cNet'};
+const ON=(O,k)=>esc((((O.names||{})[k])||'').trim()||OWN_NAMES[k]||k);
+const OWN_ORDER_DEF=['type','work','gross','adv','loanLeft','oth','net','note'];
+function ownOrder(O){const o=(Array.isArray(O.colOrder)?O.colOrder:[]).filter(k=>OWN_ORDER_DEF.includes(k));return[...o,...OWN_ORDER_DEF.filter(k=>!o.includes(k))]}
+function ownEmpOrder(O){
+  const all=Object.entries(S.emps).filter(([,e])=>!e.archived).sort((a,b)=>(grpOf(a[1])===grpOf(b[1])?0:grpOf(a[1])==='hour'?-1:1)||(a[1].name||'').localeCompare(b[1].name||'','ar'));
+  const ord=Array.isArray(O.order)?O.order:[];if(!ord.length)return all;
+  const ix=id=>{const i=ord.indexOf(id);return i<0?1e6:i};
+  return all.map((x,i)=>[x,i]).sort((a,b)=>(ix(a[0][0])-ix(b[0][0]))||(a[1]-b[1])).map(x=>x[0]);
+}
 function ownerPanel(){
   const O=ownCfg();const ck=(id,path,on,label)=>`<label><input type="checkbox" id="${id}" data-own="${path}" ${on?'checked':''}> ${label}</label>`;
-  const emps=Object.entries(S.emps).filter(([,e])=>!e.archived).sort((a,b)=>(a[1].name||'').localeCompare(b[1].name||'','ar'));
-  return`<div class="panel"><h2>كشف صاحب السنتر</h2>
-  <div class="field"><label for="ow-title">عنوان الكشف (لو سبته فاضي: «كشف مرتبات» + الشهر)</label><input id="ow-title" data-owntxt="title" value="${esc(O.title)}" placeholder="كشف مرتبات أكتوبر 2026"></div>
-  <p class="hint" style="font-weight:600;color:var(--ink)">مين يظهر</p><div class="checks">
-  ${ck('ow-hour','hour',O.hour,'موظفين بالساعة')}${ck('ow-day','day',O.day,'موظفين بالشهر')}${ck('ow-split','split',O.split,'كل نوع في جدول لوحده')}</div>
-  ${emps.length?`<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">اختار موظفين بعينهم (${emps.filter(([id])=>!O.hide[id]).length} من ${emps.length})</summary><div class="checks" style="margin-top:6px">${emps.map(([id,e])=>`<label><input type="checkbox" id="ow-e-${id}" data-ownhide="${id}" ${O.hide[id]?'':'checked'}> ${esc(e.name)}</label>`).join('')}</div></details>`:''}
-  <p class="hint" style="font-weight:600;color:var(--ink)">أعمدة الجدول</p><div class="checks">
-  ${Object.keys(OWN_COLS).map(k=>ck('ow-c-'+k,'cols.'+k,O.cols[k],OWN_COLS[k])).join('')}
-  ${ck('ow-per','perItem',O.perItem,'كل بند في عمود لوحده (بدل المرتب/السلف/الخصومات)')}</div>
-  <p class="hint" style="font-weight:600;color:var(--ink)">فوق الجدول وتحته</p><div class="checks">
-  ${Object.keys(OWN_CARDS).map(k=>ck('ow-k-'+k,'cards.'+k,O.cards[k],OWN_CARDS[k])).join('')}
-  ${ck('ow-foot','foot',O.foot,'سطر الشرح تحت الجدول')}${ck('ow-sigs','sigs',O.sigs,'خانات التوقيع')}</div>
-  <div class="field"><label for="ow-s1">التوقيع الأول</label><input id="ow-s1" data-owntxt="sig1" value="${esc(O.sig1)}"></div>
-  <div class="field"><label for="ow-s2">التوقيع التاني</label><input id="ow-s2" data-owntxt="sig2" value="${esc(O.sig2)}"></div>
-  <div class="field"><button class="btn" data-summary="1">معاينة كشف صاحب السنتر</button></div></div>`;
+  const nm=(k)=>`<input class="own-nm" id="on-${k}" data-ownname="${k}" value="${esc((O.names||{})[k]||'')}" placeholder="${esc(OWN_NAMES[k])}" aria-label="اسم ${esc(OWN_NAMES[k])}">`;
+  const mv=(attr,id,i,n)=>`<span class="own-mv"><button class="icon-btn" ${attr}="${id}" data-dir="-1" ${i===0?'disabled':''} title="لفوق" aria-label="لفوق">▲</button><button class="icon-btn" ${attr}="${id}" data-dir="1" ${i===n-1?'disabled':''} title="لتحت" aria-label="لتحت">▼</button></span>`;
+  const emps=ownEmpOrder(O);
+  const cols=ownOrder(O);
+  const COLDESC={type:'نوع الحساب (بالساعة/بالشهر)',work:'الشغل (ساعات أو أيام)',gross:O.perItem?'الأساسي + البنود (كل بند في عمود)':'المرتب قبل الخصم',adv:'السلف (المخصوم الشهر ده)',loanLeft:'باقي السلفة',oth:'خصومات تانية',net:'الصافي',note:'الملاحظة'};
+  return`<div class="own-set">
+  <div class="scard"><h3>العنوان ومين يظهر</h3>
+   <div class="field"><label for="ow-title">عنوان الكشف (لو سبته فاضي: «كشف مرتبات» + الشهر)</label><input id="ow-title" data-owntxt="title" value="${esc(O.title)}" placeholder="كشف مرتبات ${esc(periodName(S.key).replace('مرتب ',''))}"></div>
+   <div class="checks two">${ck('ow-hour','hour',O.hour,'موظفين بالساعة')}${ck('ow-day','day',O.day,'موظفين بالشهر')}${ck('ow-split','split',O.split,'كل نوع في جدول لوحده')}${ck('ow-c-job','cols.job',O.cols.job,'الوظيفة تحت الاسم')}</div></div>
+  <div class="scard"><h3>ترتيب الموظفين</h3><p class="hint">حرّك الموظف بالأسهم، وشيل العلامة عن اللي مش عاوزه يظهر.</p>
+   <div class="own-list">${emps.map(([id,e],i)=>`<div class="own-row ${O.hide[id]?'off':''}"><span class="own-n">${i+1}</span><label class="own-l"><input type="checkbox" id="ow-e-${id}" data-ownhide="${id}" ${O.hide[id]?'':'checked'}> <b>${esc(e.name)}</b> <small>${grpOf(e)==='day'?'بالشهر':'بالساعة'}</small></label>${mv('data-ownmv',id,i,emps.length)}</div>`).join('')||'<p class="hint">مفيش موظفين</p>'}</div>
+   ${Array.isArray(O.order)&&O.order.length?`<div class="row" style="margin-top:10px"><button class="btn ghost sm" data-ownabc="1">رجّع الترتيب الأبجدي</button></div>`:''}</div>
+  <div class="scard"><h3>الأعمدة</h3><p class="hint">علّم على العمود عشان يظهر، واكتب اسمه الجديد، ورتّبه بالأسهم.</p>
+   <div class="own-list">
+    <div class="own-row"><span class="own-n">—</span><span class="own-l"><b>رقم الموظف</b></span>${nm('num')}<span class="own-mv"></span></div>
+    <div class="own-row"><span class="own-n">—</span><span class="own-l"><b>اسم الموظف</b></span>${nm('name')}<span class="own-mv"></span></div>
+    ${cols.map((k,i)=>`<div class="own-row ${O.cols[k]?'':'off'}"><span class="own-n">${i+1}</span><label class="own-l"><input type="checkbox" id="ow-c-${k}" data-own="cols.${k}" ${O.cols[k]?'checked':''}> ${COLDESC[k]}</label>${k==='gross'&&O.perItem?nm('basic'):nm(k)}${mv('data-colmv',k,i,cols.length)}</div>`).join('')}
+    <div class="own-row"><span class="own-n">—</span><span class="own-l"><b>سطر الإجمالي</b></span>${nm('total')}<span class="own-mv"></span></div>
+   </div>
+   <div class="checks" style="margin-top:10px">${ck('ow-per','perItem',O.perItem,'كل بند في عمود لوحده (بدل المرتب/السلف/الخصومات)')}</div></div>
+  <div class="scard"><h3>الكروت والتوقيعات</h3>
+   <div class="own-list">${['gross','adv','oth','net'].map(k=>`<div class="own-row ${O.cards[k]?'':'off'}"><label class="own-l"><input type="checkbox" id="ow-k-${k}" data-own="cards.${k}" ${O.cards[k]?'checked':''}> كارت ${OWN_NAMES[OWN_CARD_KEY[k]]}</label>${nm(OWN_CARD_KEY[k])}</div>`).join('')}
+    ${O.split?`<div class="own-row"><span class="own-l">عنوان جدول الساعة</span>${nm('capHour')}</div><div class="own-row"><span class="own-l">عنوان جدول الشهر</span>${nm('capDay')}</div>`:''}</div>
+   <div class="checks two" style="margin-top:10px">${ck('ow-k-count','cards.count',O.cards.count,'عدد الموظفين تحت العنوان')}${ck('ow-foot','foot',O.foot,'سطر الشرح تحت الجدول')}${ck('ow-sigs','sigs',O.sigs,'خانات التوقيع')}</div>
+   ${O.sigs?`<div class="ugrid" style="margin-top:8px"><div class="field"><label for="ow-s1">التوقيع الأول</label><input id="ow-s1" data-owntxt="sig1" value="${esc(O.sig1)}"></div><div class="field"><label for="ow-s2">التوقيع التاني</label><input id="ow-s2" data-owntxt="sig2" value="${esc(O.sig2)}"></div></div>`:''}</div>
+  <div class="scard"><div class="row" style="justify-content:space-between"><h3 style="margin:0">معاينة</h3><button class="btn" data-summary="1">فتح للطباعة</button></div>
+   <div class="own-prev"><div class="paper">${summaryHTML()}</div></div></div>
+  </div>`;
+}
+function summaryHTML(){
+  const O=ownCfg(),C=O.cols,its=items();
+  const list=ownEmpOrder(O).filter(([id,e])=>!O.hide[id]&&O[grpOf(e)]);
+  const rows=list.map(([id,e])=>{const p=payOf(id);let adv=p.loan.ded,oth=0;p.lines.forEach(l=>{if(l.kind==='ded'){if(isAdv(l))adv+=l.amt;else oth+=l.amt}});return{id,e,p,adv,oth}});
+  const T={gross:0,adv:0,oth:0,net:0,it:{}};rows.forEach(r=>{T.gross+=r.p.gross;T.adv+=r.adv;T.oth+=r.oth;T.net+=r.p.net;r.p.lines.forEach(l=>T.it[l.id]=(T.it[l.id]||0)+l.amt)});
+  const sum=f=>rs=>rs.reduce((a,r)=>a+f(r),0);
+  const itemCols=O.perItem?its.filter(it=>Math.abs(T.it[it.id]||0)>0.0001):[];
+  const M={};
+  if(C.type)M.type=[{h:ON(O,'type'),v:r=>r.p.day?'بالشهر':'بالساعة'}];
+  if(C.work)M.work=[{h:ON(O,'work'),v:r=>r.p.day?r.p.worked+' يوم':fmtH(r.p.h)}];
+  if(O.perItem){
+    const base=r=>r.p.gross-r.p.adds;
+    const g=[];if(C.gross)g.push({h:ON(O,'basic'),v:r=>money(base(r)),tot:sum(base)});
+    if(C.adv&&rows.some(r=>r.p.loan.ded))g.push({h:ON(O,'loanDed'),v:r=>r.p.loan.ded?money(r.p.loan.ded):'—',tot:sum(r=>r.p.loan.ded)});
+    itemCols.forEach(it=>g.push({h:esc(it.name)+(it.kind==='ded'?' (−)':' (+)'),v:r=>{const l=r.p.lines.find(x=>x.id===it.id);return l&&l.amt?money(l.amt):'—'},tot:sum(r=>(r.p.lines.find(x=>x.id===it.id)||{}).amt||0)}));
+    M.gross=g;
+    if(C.loanLeft&&rows.some(r=>r.p.loan.left))M.loanLeft=[{h:ON(O,'loanLeft'),v:r=>r.p.loan.left?money(r.p.loan.left):'—',tot:sum(r=>r.p.loan.left)}];
+  }else{
+    if(C.gross)M.gross=[{h:ON(O,'gross'),v:r=>money(r.p.gross),tot:sum(r=>r.p.gross)}];
+    if(C.adv)M.adv=[{h:ON(O,'adv'),v:r=>r.adv?money(r.adv):'—',tot:sum(r=>r.adv)}];
+    if(C.loanLeft)M.loanLeft=[{h:ON(O,'loanLeft'),v:r=>r.p.loan.left?money(r.p.loan.left):'—',tot:sum(r=>r.p.loan.left)}];
+    if(C.oth&&T.oth>0.0001)M.oth=[{h:ON(O,'oth'),v:r=>r.oth?money(r.oth):'—',tot:sum(r=>r.oth)}];
+  }
+  if(C.net)M.net=[{h:ON(O,'net'),v:r=>`<b>${money(r.p.net)}</b>`,tot:sum(r=>r.p.net)}];
+  if(C.note)M.note=[{h:ON(O,'note'),v:r=>esc(r.p.note||''),cls:'note'}];
+  const cols=ownOrder(O).flatMap(k=>M[k]||[]);
+  const row=(r,i)=>`<tr><td>${i+1}</td><td style="text-align:right"><b>${esc(r.e.name)}</b>${C.job&&r.e.job?`<div style="font-size:.75rem;color:#5B6B7D">${esc(r.e.job)}</div>`:''}</td>${cols.map(c=>`<td${c.cls?' style="text-align:right;font-size:.78rem"':''}>${c.v(r)}</td>`).join('')}</tr>`;
+  const head=`<thead><tr><th>${ON(O,'num')}</th><th>${ON(O,'name')}</th>${cols.map(c=>`<th>${c.h}</th>`).join('')}</tr></thead>`;
+  const tfoot=rs=>{const lead=cols.findIndex(c=>c.tot);if(lead<0)return'';return`<tfoot><tr><td colspan="${2+lead}">${ON(O,'total')}</td>${cols.slice(lead).map(c=>`<td>${c.tot?money(c.tot(rs)):''}</td>`).join('')}</tr></tfoot>`};
+  const table=(rs,cap)=>`${cap?`<h4 style="margin:14px 0 4px;color:#2B3E55">${cap}</h4>`:''}<table class="owner">${head}<tbody>${rs.map(row).join('')||`<tr><td colspan="${2+cols.length}">مفيش موظفين</td></tr>`}</tbody>${tfoot(rs)}</table>`;
+  let tables;
+  if(O.split){const h=rows.filter(r=>!r.p.day),d=rows.filter(r=>r.p.day);tables=(h.length?table(h,ON(O,'capHour')):'')+(d.length?table(d,ON(O,'capDay')):'')}
+  else tables=table(rows);
+  const K=O.cards;const cards=[K.gross?`<div><small>${ON(O,'cGross')}</small><b>${money(T.gross)} ج</b></div>`:'',K.adv?`<div><small>${ON(O,'cAdv')}</small><b>${money(T.adv)} ج</b></div>`:'',K.oth&&T.oth>0.0001?`<div><small>${ON(O,'cOth')}</small><b>${money(T.oth)} ج</b></div>`:'',K.net?`<div style="background:#2B3E55;color:#fff"><small style="color:#cfd9e3">${ON(O,'cNet')}</small><b>${money(T.net)} ج</b></div>`:''].join('');
+  const title=O.title.trim()||('كشف مرتبات '+periodName(S.key).replace('مرتب ',''));
+  return`<div class="rp-head"><img src="${LOGO}" alt=""><div style="flex:1"><h3>${esc(title)}</h3><div class="meta">${periodRange(S.key)}${K.count?' · '+rows.length+' موظف':''}${isClosed()?' · الشهر مقفول':''}</div></div></div>
+  ${cards?`<div class="info">${cards}</div>`:''}${tables}
+  ${O.foot?`<p style="font-size:.75rem;color:#5B6B7D;margin-top:8px">${O.perItem?'الأساسي = المرتب قبل البنود (الساعات أو الأيام × السعر + الجُمع والإجازات والزيادة). الصافي = الأساسي + الإضافات − الخصومات.':'المرتب = الإجمالي قبل الخصم. الصافي = المرتب − السلف − الخصومات.'} المبالغ بالجنيه.</p>`:''}
+  ${O.sigs?`<div class="sigs"><div>${esc(O.sig1)}</div><div>${esc(O.sig2)}</div></div>`:''}`;
 }
 let delConfirm=null;
 function deletePanel(){
@@ -981,44 +1060,6 @@ const OWN_DEF={title:'',sig1:'توقيع المحاسب',sig2:'توقيع صاح
 const OWN_COLS={job:'الوظيفة تحت الاسم',type:'نوع الحساب (بالساعة/بالشهر)',work:'الشغل (ساعات أو أيام)',gross:'المرتب قبل الخصم',adv:'السلف (المخصوم الشهر ده)',loanLeft:'باقي السلفة',oth:'خصومات تانية',net:'الصافي',note:'الملاحظة'};
 const OWN_CARDS={gross:'كارت إجمالي المرتبات',adv:'كارت إجمالي السلف',oth:'كارت الخصومات التانية',net:'كارت المطلوب صرفه',count:'عدد الموظفين تحت العنوان'};
 function ownCfg(){const o=S.general.owner||{};return{...OWN_DEF,...o,cols:{...OWN_DEF.cols,...(o.cols||{})},cards:{...OWN_DEF.cards,...(o.cards||{})},hide:{...(o.hide||{})}}}
-function summaryHTML(){
-  const O=ownCfg(),C=O.cols,its=items();
-  const list=Object.entries(S.emps).filter(([id,e])=>!e.archived&&!O.hide[id]&&O[grpOf(e)]).sort((a,b)=>(grpOf(a[1])===grpOf(b[1])?0:grpOf(a[1])==='hour'?-1:1)||(a[1].name||'').localeCompare(b[1].name||'','ar'));
-  const rows=list.map(([id,e])=>{const p=payOf(id);let adv=p.loan.ded,oth=0;p.lines.forEach(l=>{if(l.kind==='ded'){if(isAdv(l))adv+=l.amt;else oth+=l.amt}});return{id,e,p,adv,oth}});
-  const T={gross:0,adv:0,oth:0,net:0,it:{}};rows.forEach(r=>{T.gross+=r.p.gross;T.adv+=r.adv;T.oth+=r.oth;T.net+=r.p.net;r.p.lines.forEach(l=>T.it[l.id]=(T.it[l.id]||0)+l.amt)});
-  const showOth=C.oth&&T.oth>0.0001;
-  const itemCols=O.perItem?its.filter(it=>Math.abs(T.it[it.id]||0)>0.0001):[];
-  const cols=[];
-  if(C.type)cols.push({h:'النوع',v:r=>r.p.day?'بالشهر':'بالساعة'});
-  if(C.work)cols.push({h:'الشغل',v:r=>r.p.day?r.p.worked+' يوم':fmtH(r.p.h)});
-  if(O.perItem){
-    if(C.gross)cols.push({h:'الأساسي',v:r=>money(r.p.basic+r.p.friPay+r.p.leavePay),t:rows.reduce((a,r)=>a+r.p.basic+r.p.friPay+r.p.leavePay,0)});
-    if(C.adv&&rows.some(r=>r.p.loan.ded))cols.push({h:'خصم السلفة (−)',v:r=>r.p.loan.ded?money(r.p.loan.ded):'—',t:0});
-    if(C.loanLeft&&rows.some(r=>r.p.loan.left))cols.push({h:'باقي السلفة',v:r=>r.p.loan.left?money(r.p.loan.left):'—',t:0});
-    itemCols.forEach(it=>cols.push({h:esc(it.name)+(it.kind==='ded'?' (−)':' (+)'),v:r=>{const l=r.p.lines.find(x=>x.id===it.id);return l&&l.amt?money(l.amt):'—'},t:T.it[it.id]}));
-  }else{
-    if(C.gross)cols.push({h:'المرتب',v:r=>money(r.p.gross),t:T.gross});
-    if(C.adv)cols.push({h:'السلف',v:r=>r.adv?money(r.adv):'—',t:T.adv});
-    if(C.loanLeft)cols.push({h:'باقي السلفة',v:r=>r.p.loan.left?money(r.p.loan.left):'—',t:0});
-    if(showOth)cols.push({h:'خصومات',v:r=>r.oth?money(r.oth):'—',t:T.oth});
-  }
-  if(C.net)cols.push({h:'الصافي',v:r=>`<b>${money(r.p.net)}</b>`,t:T.net});
-  if(C.note)cols.push({h:'ملاحظة',v:r=>esc(r.p.note||''),cls:'note'});
-  const row=(r,i)=>`<tr><td>${i+1}</td><td style="text-align:right"><b>${esc(r.e.name)}</b>${C.job&&r.e.job?`<div style="font-size:.75rem;color:#5B6B7D">${esc(r.e.job)}</div>`:''}</td>${cols.map(c=>`<td${c.cls?' style="text-align:right;font-size:.78rem"':''}>${c.v(r)}</td>`).join('')}</tr>`;
-  const head=`<thead><tr><th>م</th><th>اسم الموظف</th>${cols.map(c=>`<th>${c.h}</th>`).join('')}</tr></thead>`;
-  const totOf=(c,rs)=>{if(c.h==='المرتب')return rs.reduce((a,r)=>a+r.p.gross,0);if(c.h==='السلف')return rs.reduce((a,r)=>a+r.adv,0);if(c.h==='خصومات')return rs.reduce((a,r)=>a+r.oth,0);if(c.h==='باقي السلفة')return rs.reduce((a,r)=>a+r.p.loan.left,0);if(c.h==='الصافي')return rs.reduce((a,r)=>a+r.p.net,0);if(c.h==='خصم السلفة (−)')return rs.reduce((a,r)=>a+r.p.loan.ded,0);if(c.h==='الأساسي')return rs.reduce((a,r)=>a+r.p.basic+r.p.friPay+r.p.leavePay,0);const it=itemCols.find(it=>c.h.startsWith(esc(it.name)));return it?rs.reduce((a,r)=>a+((r.p.lines.find(x=>x.id===it.id)||{}).amt||0),0):0};
-  const tfoot=rs=>{const lead=cols.findIndex(c=>c.t!==undefined);if(lead<0)return'';return`<tfoot><tr><td colspan="${2+lead}">الإجمالي</td>${cols.slice(lead).map(c=>`<td>${c.t!==undefined?money(totOf(c,rs)):''}</td>`).join('')}</tr></tfoot>`};
-  const table=(rs,cap)=>`${cap?`<h4 style="margin:14px 0 4px;color:#2B3E55">${cap}</h4>`:''}<table class="owner">${head}<tbody>${rs.map(row).join('')||`<tr><td colspan="${2+cols.length}">مفيش موظفين</td></tr>`}</tbody>${tfoot(rs)}</table>`;
-  let tables;
-  if(O.split){const h=rows.filter(r=>!r.p.day),d=rows.filter(r=>r.p.day);tables=(h.length?table(h,'موظفين بالساعة'):'')+(d.length?table(d,'موظفين بالشهر'):'')}
-  else tables=table(rows);
-  const K=O.cards;const cards=[K.gross?`<div><small>إجمالي المرتبات</small><b>${money(T.gross)} ج</b></div>`:'',K.adv?`<div><small>إجمالي السلف</small><b>${money(T.adv)} ج</b></div>`:'',K.oth&&T.oth>0.0001?`<div><small>خصومات تانية</small><b>${money(T.oth)} ج</b></div>`:'',K.net?`<div style="background:#2B3E55;color:#fff"><small style="color:#cfd9e3">المطلوب صرفه</small><b>${money(T.net)} ج</b></div>`:''].join('');
-  const title=O.title.trim()||('كشف مرتبات '+periodName(S.key).replace('مرتب ',''));
-  return`<div class="rp-head"><img src="${LOGO}" alt=""><div style="flex:1"><h3>${esc(title)}</h3><div class="meta">${periodRange(S.key)}${K.count?' · '+rows.length+' موظف':''}${isClosed()?' · الشهر مقفول':''}</div></div></div>
-  ${cards?`<div class="info">${cards}</div>`:''}${tables}
-  ${O.foot?`<p style="font-size:.75rem;color:#5B6B7D;margin-top:8px">${O.perItem?'الأساسي = الساعات أو الأيام × السعر (+ الجُمع والإجازات للي بالساعة). الصافي = الأساسي + الإضافات − الخصومات.':'المرتب = الإجمالي قبل الخصم. الصافي = المرتب − السلف − الخصومات.'} المبالغ بالجنيه.</p>`:''}
-  ${O.sigs?`<div class="sigs"><div>${esc(O.sig1)}</div><div>${esc(O.sig2)}</div></div>`:''}`;
-}
 function openSummary(){openPaper(summaryHTML(),'كشف مرتبات '+S.key);$('#paper').dataset.multi='1'}
 
 // ---------- history ----------
@@ -1078,6 +1119,9 @@ document.addEventListener('click',e=>{
   else if(t.dataset.summary)openSummary();
   else if(t.dataset.sec){S.setSec=t.dataset.sec;delConfirm=null;render();window.scrollTo(0,0)}
   else if(t.dataset.sigdef)write('config/general',{sigImg:'default'});
+  else if(t.dataset.ownmv){const O=ownCfg(),ids=ownEmpOrder(O).map(x=>x[0]),i=ids.indexOf(t.dataset.ownmv),j=i+(+t.dataset.dir);if(i>=0&&j>=0&&j<ids.length){[ids[i],ids[j]]=[ids[j],ids[i]];write('config/general',{owner:{order:ids}})}}
+  else if(t.dataset.ownabc)write('config/general',{owner:{order:[]}});
+  else if(t.dataset.colmv){const O=ownCfg(),ks=ownOrder(O),i=ks.indexOf(t.dataset.colmv),j=i+(+t.dataset.dir);if(i>=0&&j>=0&&j<ks.length){[ks[i],ks[j]]=[ks[j],ks[i]];write('config/general',{owner:{colOrder:ks}})}}
   else if(t.dataset.rlabreset){write('config/general',{rlabels:Object.fromEntries(Object.keys(RLAB_DEF).map(k=>[k,'']))});toast('رجعت المسميات الأصلية')}
   else if(t.dataset.signone)write('config/general',{sigImg:''});
   else if(t.dataset.batch)openBatch();
@@ -1124,6 +1168,7 @@ document.addEventListener('change',e=>{
   else if(t.dataset.rlab){write('config/general',{rlabels:{[t.dataset.rlab]:t.value.trim()}});toast('اتغيّر المسمى')}
   else if(t.dataset.own){const [a,b]=t.dataset.own.split('.');write('config/general',{owner:b?{[a]:{[b]:t.checked}}:{[a]:t.checked}})}
   else if(t.dataset.ownhide)write('config/general',{owner:{hide:{[t.dataset.ownhide]:!t.checked}}});
+  else if(t.dataset.ownname)write('config/general',{owner:{names:{[t.dataset.ownname]:t.value.trim()}}});
   else if(t.dataset.owntxt)write('config/general',{owner:{[t.dataset.owntxt]:t.value}});
   else if(t.dataset.it!==undefined){const arr=items().map(x=>({...x}));const i=+t.dataset.it;if(arr[i]){arr[i][t.dataset.k]=t.dataset.k==='name'?(t.value.trim()||arr[i].name):t.value;write('config/general',{items:arr})}}
   else if(t.dataset.pay){const f=t.dataset.f;write('pay/'+attId(t.dataset.pay),{month:S.key,emp:t.dataset.pay,[f]:(f==='note'||f==='bonusWhy')?t.value.trim():(t.value===''?'':num(t.value))})}
