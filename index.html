@@ -132,7 +132,8 @@ tfoot td{font-weight:700;background:var(--surface-2)}
 .own-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .own-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-top:1px solid var(--line);background:var(--surface)}
 .own-row:first-child{border-top:0}
-.own-row.off{background:var(--surface-2)}.own-row.off .own-l{opacity:.55}
+.own-row.off{background:var(--surface-2)}.own-nm::placeholder{color:var(--muted);opacity:.55}
+.own-row.edited{background:color-mix(in srgb,var(--accent) 7%,var(--surface))}.own-l small{margin-inline-start:4px}.own-row.off .own-l{opacity:.55}
 .own-n{width:22px;text-align:center;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums;flex:none}
 .own-l{flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer}
 .own-l small{color:var(--muted);font-size:.75rem}
@@ -805,15 +806,19 @@ function ownerPanel(){
     ${O.split?`<div class="own-row"><span class="own-l">عنوان جدول الساعة</span>${nm('capHour')}</div><div class="own-row"><span class="own-l">عنوان جدول الشهر</span>${nm('capDay')}</div>`:''}</div>
    <div class="checks two" style="margin-top:10px">${ck('ow-k-count','cards.count',O.cards.count,'عدد الموظفين تحت العنوان')}${ck('ow-foot','foot',O.foot,'سطر الشرح تحت الجدول')}${ck('ow-sigs','sigs',O.sigs,'خانات التوقيع')}</div>
    ${O.sigs?`<div class="ugrid" style="margin-top:8px"><div class="field"><label for="ow-s1">التوقيع الأول</label><input id="ow-s1" data-owntxt="sig1" value="${esc(O.sig1)}"></div><div class="field"><label for="ow-s2">التوقيع التاني</label><input id="ow-s2" data-owntxt="sig2" value="${esc(O.sig2)}"></div></div>`:''}</div>
+  <div class="scard"><h3>تعديل المبالغ النهائية في الكشف</h3><p class="hint">اكتب المبلغ اللي عاوزه يظهر لصاحب السنتر بدل المحسوب. التعديل ده في الكشف بس، ومش بيغيّر مرتب الموظف ولا تقريره. سيب الخانة فاضية عشان يرجع للمحسوب.</p>
+   <div class="own-list">${emps.filter(([id,e])=>!O.hide[id]&&O[grpOf(e)]).map(([id,e])=>{const pn=payOf(id).net,ov=ownNetOf(id);return`<div class="own-row ${ov!==null?'edited':''}"><span class="own-l"><b>${esc(e.name)}</b><small>المحسوب: ${money(pn)} ج</small></span>${ov!==null&&Math.abs(ov-pn)>0.004?`<span class="tag ${ov>pn?'ok':'warn'}">${ov>pn?'+':'−'} ${money(Math.abs(ov-pn))}</span>`:''}<input class="own-nm" type="number" step="any" id="onet-${id}" data-ownnet="${id}" value="${ov!==null?ov:''}" placeholder="${money(pn)}" ${isClosed()?'disabled':''} style="width:130px;text-align:center"></div>`}).join('')||'<p class="hint" style="padding:10px">مفيش موظفين في الكشف</p>'}</div>
+   ${emps.some(([id])=>ownNetOf(id)!==null)?`<div class="row" style="margin-top:10px"><button class="btn ghost sm" data-ownnetreset="1">رجّع كل المبالغ للمحسوب</button></div>`:''}</div>
   <div class="scard"><div class="row" style="justify-content:space-between"><h3 style="margin:0">معاينة</h3><button class="btn" data-summary="1">فتح للطباعة</button></div>
    <div class="own-prev"><div class="paper">${summaryHTML()}</div></div></div>
   </div>`;
 }
+const ownNetOf=id=>{const v=(S.pay[attId(id)]||{}).ownerNet;return v===undefined||v===null||v===''?null:num(v)};
 function summaryHTML(){
   const O=ownCfg(),C=O.cols,its=items();
   const list=ownEmpOrder(O).filter(([id,e])=>!O.hide[id]&&O[grpOf(e)]);
-  const rows=list.map(([id,e])=>{const p=payOf(id);let adv=p.loan.ded,oth=0;p.lines.forEach(l=>{if(l.kind==='ded'){if(isAdv(l))adv+=l.amt;else oth+=l.amt}});return{id,e,p,adv,oth}});
-  const T={gross:0,adv:0,oth:0,net:0,it:{}};rows.forEach(r=>{T.gross+=r.p.gross;T.adv+=r.adv;T.oth+=r.oth;T.net+=r.p.net;r.p.lines.forEach(l=>T.it[l.id]=(T.it[l.id]||0)+l.amt)});
+  const rows=list.map(([id,e])=>{const p=payOf(id);let adv=p.loan.ded,oth=0;p.lines.forEach(l=>{if(l.kind==='ded'){if(isAdv(l))adv+=l.amt;else oth+=l.amt}});const ov=ownNetOf(id);return{id,e,p,adv,oth,net:ov!==null?ov:p.net}});
+  const T={gross:0,adv:0,oth:0,net:0,it:{}};rows.forEach(r=>{T.gross+=r.p.gross;T.adv+=r.adv;T.oth+=r.oth;T.net+=r.net;r.p.lines.forEach(l=>T.it[l.id]=(T.it[l.id]||0)+l.amt)});
   const sum=f=>rs=>rs.reduce((a,r)=>a+f(r),0);
   const itemCols=O.perItem?its.filter(it=>Math.abs(T.it[it.id]||0)>0.0001):[];
   const M={};
@@ -832,7 +837,7 @@ function summaryHTML(){
     if(C.loanLeft)M.loanLeft=[{h:ON(O,'loanLeft'),v:r=>r.p.loan.left?money(r.p.loan.left):'—',tot:sum(r=>r.p.loan.left)}];
     if(C.oth&&T.oth>0.0001)M.oth=[{h:ON(O,'oth'),v:r=>r.oth?money(r.oth):'—',tot:sum(r=>r.oth)}];
   }
-  if(C.net)M.net=[{h:ON(O,'net'),v:r=>`<b>${money(r.p.net)}</b>`,tot:sum(r=>r.p.net)}];
+  if(C.net)M.net=[{h:ON(O,'net'),v:r=>`<b>${money(r.net)}</b>`,tot:sum(r=>r.net)}];
   if(C.note)M.note=[{h:ON(O,'note'),v:r=>esc(r.p.note||''),cls:'note'}];
   const cols=ownOrder(O).flatMap(k=>M[k]||[]);
   const row=(r,i)=>`<tr><td>${i+1}</td><td style="text-align:right"><b>${esc(r.e.name)}</b>${C.job&&r.e.job?`<div style="font-size:.75rem;color:#5B6B7D">${esc(r.e.job)}</div>`:''}</td>${cols.map(c=>`<td${c.cls?' style="text-align:right;font-size:.78rem"':''}>${c.v(r)}</td>`).join('')}</tr>`;
@@ -1120,6 +1125,7 @@ document.addEventListener('click',e=>{
   else if(t.dataset.sec){S.setSec=t.dataset.sec;delConfirm=null;render();window.scrollTo(0,0)}
   else if(t.dataset.sigdef)write('config/general',{sigImg:'default'});
   else if(t.dataset.ownmv){const O=ownCfg(),ids=ownEmpOrder(O).map(x=>x[0]),i=ids.indexOf(t.dataset.ownmv),j=i+(+t.dataset.dir);if(i>=0&&j>=0&&j<ids.length){[ids[i],ids[j]]=[ids[j],ids[i]];write('config/general',{owner:{order:ids}})}}
+  else if(t.dataset.ownnetreset){for(const [id] of Object.entries(S.emps))if(ownNetOf(id)!==null)write('pay/'+attId(id),{month:S.key,emp:id,ownerNet:''});toast('رجعت كل المبالغ للمحسوب')}
   else if(t.dataset.ownabc)write('config/general',{owner:{order:[]}});
   else if(t.dataset.colmv){const O=ownCfg(),ks=ownOrder(O),i=ks.indexOf(t.dataset.colmv),j=i+(+t.dataset.dir);if(i>=0&&j>=0&&j<ks.length){[ks[i],ks[j]]=[ks[j],ks[i]];write('config/general',{owner:{colOrder:ks}})}}
   else if(t.dataset.rlabreset){write('config/general',{rlabels:Object.fromEntries(Object.keys(RLAB_DEF).map(k=>[k,'']))});toast('رجعت المسميات الأصلية')}
@@ -1168,6 +1174,7 @@ document.addEventListener('change',e=>{
   else if(t.dataset.rlab){write('config/general',{rlabels:{[t.dataset.rlab]:t.value.trim()}});toast('اتغيّر المسمى')}
   else if(t.dataset.own){const [a,b]=t.dataset.own.split('.');write('config/general',{owner:b?{[a]:{[b]:t.checked}}:{[a]:t.checked}})}
   else if(t.dataset.ownhide)write('config/general',{owner:{hide:{[t.dataset.ownhide]:!t.checked}}});
+  else if(t.dataset.ownnet){const id=t.dataset.ownnet;write('pay/'+attId(id),{month:S.key,emp:id,ownerNet:t.value===''?'':num(t.value)});toast(t.value===''?'رجع للمحسوب':'اتعدّل المبلغ في الكشف')}
   else if(t.dataset.ownname)write('config/general',{owner:{names:{[t.dataset.ownname]:t.value.trim()}}});
   else if(t.dataset.owntxt)write('config/general',{owner:{[t.dataset.owntxt]:t.value}});
   else if(t.dataset.it!==undefined){const arr=items().map(x=>({...x}));const i=+t.dataset.it;if(arr[i]){arr[i][t.dataset.k]=t.dataset.k==='name'?(t.value.trim()||arr[i].name):t.value;write('config/general',{items:arr})}}
